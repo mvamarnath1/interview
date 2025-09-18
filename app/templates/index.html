@@ -38,26 +38,18 @@
                     <span>Waiting for phone connection...</span>
                 </div>
 
-                <div class="qr-section">
-                    <h3>Scan QR Code to Connect</h3>
-                    <div class="qr-container">
-                        <div id="qrCode"></div>
-                    </div>
-
-                    <div class="pin-section"
-                        style="text-align: center; margin: 1rem 0; padding: 1rem; background: #374151; border-radius: 8px;">
-                        <h4 style="margin: 0 0 0.5rem 0; color: #fbbf24;">📱 Quick Join PIN</h4>
+                <div class="pin-section">
+                    <div class="pin-container"
+                        style="text-align: center; margin: 1rem 0; padding: 2rem; background: #374151; border-radius: 12px;">
+                        <h3 style="margin: 0 0 1rem 0; color: #fbbf24;">📱 Quick Join PIN</h3>
                         <div id="pinCode"
-                            style="font-size: 2rem; font-weight: bold; color: #10b981; letter-spacing: 0.2em;"></div>
-                        <p style="margin: 0.5rem 0 0 0; font-size: 0.9rem; color: #94a3b8;">
-                            Go to <strong style="color: #10b981;">localhost:8000/join</strong> on mobile and enter this
-                            PIN
+                            style="font-size: 3rem; font-weight: bold; color: #10b981; letter-spacing: 0.3em; margin: 1rem 0;"></div>
+                        <p style="margin: 1rem 0 0 0; font-size: 1.1rem; color: #94a3b8;">
+                            Go to <strong style="color: #10b981;" id="joinUrlDisplay">loading...</strong> on mobile and enter this PIN
                         </p>
-                    </div>
-
-                    <div class="url-box">
-                        <p>Or open this URL on your phone:</p>
-                        <a id="joinUrl" target="_blank" rel="noopener"></a>
+                        <p style="margin: 0.5rem 0 0 0; font-size: 0.9rem; color: #64748b; font-style: italic;">
+                            💡 Mobile devices will automatically be redirected to the mobile interface
+                        </p>
                     </div>
                 </div>
 
@@ -73,6 +65,28 @@
     <script>
         let sessionSocket;
         let currentSessionId = null;
+        let baseUrl = '';
+
+        // Fetch the correct base URL when page loads
+        async function loadConfig() {
+            try {
+                const response = await fetch('/api/config');
+                const config = await response.json();
+                baseUrl = config.base_url;
+                
+                // Update the join URL display
+                const joinUrlDisplay = document.getElementById('joinUrlDisplay');
+                if (joinUrlDisplay) {
+                    joinUrlDisplay.textContent = config.join_url;
+                }
+            } catch (error) {
+                console.error('Failed to load config:', error);
+                baseUrl = window.location.origin; // fallback
+            }
+        }
+
+        // Load config when page loads
+        document.addEventListener('DOMContentLoaded', loadConfig);
 
         async function createSession() {
             const userName = document.getElementById('userName').value.trim();
@@ -110,19 +124,6 @@
 
                 // Show session info
                 document.getElementById('sessionInfo').style.display = 'block';
-
-                // Display QR Code
-                const qrCodeEl = document.getElementById('qrCode');
-                qrCodeEl.innerHTML = '';
-                const img = document.createElement('img');
-                img.src = data.qr_code_data;
-                img.alt = "QR Code to join session";
-                qrCodeEl.appendChild(img);
-
-                // Display join URL
-                const joinUrlEl = document.getElementById('joinUrl');
-                joinUrlEl.href = data.join_url;
-                joinUrlEl.textContent = data.join_url;
 
                 // Display PIN Code
                 const pinCodeEl = document.getElementById('pinCode');

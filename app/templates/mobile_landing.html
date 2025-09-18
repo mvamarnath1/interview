@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interview Assistant - Join Session</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 400px;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #4f46e5, #7c3aed);
+            color: white;
+            padding: 2rem;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+        }
+
+        .header p {
+            opacity: 0.9;
+            font-size: 0.9rem;
+        }
+
+        .content {
+            padding: 2rem;
+        }
+
+        .pin-section {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+
+        .pin-section h2 {
+            color: #374151;
+            font-size: 1.3rem;
+            margin-bottom: 1rem;
+            font-weight: 600;
+        }
+
+        .pin-input-container {
+            margin: 1.5rem 0;
+        }
+
+        .pin-input {
+            width: 100%;
+            height: 60px;
+            font-size: 1.8rem;
+            text-align: center;
+            border: 3px solid #e5e7eb;
+            border-radius: 12px;
+            letter-spacing: 0.5rem;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            background: #f9fafb;
+        }
+
+        .pin-input:focus {
+            outline: none;
+            border-color: #4f46e5;
+            background: white;
+            box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+        }
+
+        .pin-input.valid {
+            border-color: #10b981;
+            background: #f0fdf4;
+        }
+
+        .join-button {
+            width: 100%;
+            height: 56px;
+            background: linear-gradient(135deg, #4f46e5, #7c3aed);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+        }
+
+        .join-button:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(79, 70, 229, 0.3);
+        }
+
+        .join-button:disabled {
+            background: #d1d5db;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .loading {
+            width: 20px;
+            height: 20px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 1s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .divider {
+            display: flex;
+            align-items: center;
+            margin: 2rem 0;
+            color: #6b7280;
+            font-size: 0.9rem;
+        }
+
+        .divider::before,
+        .divider::after {
+            content: '';
+            flex: 1;
+            height: 1px;
+            background: #e5e7eb;
+        }
+
+        .divider span {
+            padding: 0 1rem;
+        }
+
+        .sessions-section h3 {
+            color: #374151;
+            font-size: 1.1rem;
+            margin-bottom: 1rem;
+            font-weight: 600;
+        }
+
+        .sessions-list {
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .session-item {
+            background: #f9fafb;
+            border: 2px solid #e5e7eb;
+            border-radius: 12px;
+            padding: 1rem;
+            margin-bottom: 0.75rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .session-item:hover {
+            border-color: #4f46e5;
+            background: white;
+            transform: translateY(-1px);
+        }
+
+        .session-item.selected {
+            border-color: #4f46e5;
+            background: #eef2ff;
+        }
+
+        .session-name {
+            font-weight: 600;
+            color: #374151;
+            margin-bottom: 0.25rem;
+        }
+
+        .session-pin {
+            font-size: 0.9rem;
+            color: #6b7280;
+        }
+
+        .error-message {
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            color: #dc2626;
+            padding: 1rem;
+            border-radius: 8px;
+            margin-top: 1rem;
+            font-size: 0.9rem;
+            display: none;
+        }
+
+        .success-message {
+            background: #f0fdf4;
+            border: 1px solid #bbf7d0;
+            color: #16a34a;
+            padding: 1rem;
+            border-radius: 8px;
+            margin-top: 1rem;
+            font-size: 0.9rem;
+            display: none;
+        }
+
+        .help-text {
+            text-align: center;
+            color: #6b7280;
+            font-size: 0.85rem;
+            margin-top: 1rem;
+            line-height: 1.4;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎤 Interview Assistant</h1>
+            <p>Join an active interview session</p>
+        </div>
+
+        <div class="content">
+            <!-- PIN Entry Section -->
+            <div class="pin-section">
+                <h2>Enter Session PIN</h2>
+                <div class="pin-input-container">
+                    <input 
+                        type="text" 
+                        class="pin-input" 
+                        id="pinInput" 
+                        placeholder="000000"
+                        maxlength="6"
+                        inputmode="numeric"
+                        pattern="[0-9]*"
+                        autocomplete="off"
+                    >
+                </div>
+                <button class="join-button" id="joinBtn" disabled>
+                    Join Session
+                </button>
+            </div>
+
+            <div class="divider">
+                <span>or choose from active sessions</span>
+            </div>
+
+            <!-- Active Sessions Section -->
+            <div class="sessions-section">
+                <h3>Active Sessions</h3>
+                <div class="sessions-list" id="sessionsList">
+                    <div style="text-align: center; color: #6b7280; padding: 2rem;">
+                        Loading sessions...
+                    </div>
+                </div>
+            </div>
+
+            <div class="error-message" id="errorMessage"></div>
+            <div class="success-message" id="successMessage"></div>
+
+            <div class="help-text">
+                💡 Get the PIN from your interviewer or select an active session above
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let baseUrl = '';
+        let availableSessions = [];
+
+        // Load configuration and sessions
+        async function loadConfig() {
+            try {
+                const response = await fetch('/api/config');
+                const config = await response.json();
+                baseUrl = config.base_url;
+            } catch (error) {
+                console.error('Failed to load config:', error);
+                baseUrl = window.location.origin;
+            }
+        }
+
+        async function loadSessions() {
+            try {
+                const response = await fetch('/api/sessions');
+                const sessions = await response.json();
+                displaySessions(sessions);
+            } catch (error) {
+                console.error('Failed to load sessions:', error);
+                document.getElementById('sessionsList').innerHTML = 
+                    '<div style="text-align: center; color: #ef4444; padding: 1rem;">Failed to load sessions</div>';
+            }
+        }
+
+        function displaySessions(sessions) {
+            const sessionsList = document.getElementById('sessionsList');
+            
+            if (sessions.length === 0) {
+                sessionsList.innerHTML = 
+                    '<div style="text-align: center; color: #6b7280; padding: 1rem;">No active sessions found</div>';
+                return;
+            }
+
+            sessionsList.innerHTML = sessions.map(session => `
+                <div class="session-item" data-pin="${session.pin_code}" onclick="selectSession('${session.pin_code}')">
+                    <div class="session-name">${session.user_name}</div>
+                    <div class="session-pin">PIN: ${session.pin_code}</div>
+                </div>
+            `).join('');
+        }
+
+        function selectSession(pin) {
+            // Remove previous selection
+            document.querySelectorAll('.session-item').forEach(item => {
+                item.classList.remove('selected');
+            });
+            
+            // Select current item
+            document.querySelector(`[data-pin="${pin}"]`).classList.add('selected');
+            
+            // Fill PIN input
+            const pinInput = document.getElementById('pinInput');
+            pinInput.value = pin;
+            pinInput.classList.add('valid');
+            
+            // Enable join button
+            document.getElementById('joinBtn').disabled = false;
+        }
+
+        // PIN input handling
+        document.getElementById('pinInput').addEventListener('input', function(e) {
+            let value = e.target.value.replace(/\D/g, ''); // Only digits
+            e.target.value = value;
+            
+            const joinBtn = document.getElementById('joinBtn');
+            joinBtn.disabled = value.length !== 6;
+            
+            if (value.length === 6) {
+                e.target.classList.add('valid');
+            } else {
+                e.target.classList.remove('valid');
+            }
+            
+            // Clear session selection if typing manually
+            document.querySelectorAll('.session-item').forEach(item => {
+                item.classList.remove('selected');
+            });
+        });
+
+        // Handle Enter key
+        document.getElementById('pinInput').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && e.target.value.length === 6) {
+                joinSession();
+            }
+        });
+
+        // Join session function
+        async function joinSession() {
+            const pinInput = document.getElementById('pinInput');
+            const joinBtn = document.getElementById('joinBtn');
+            const errorMessage = document.getElementById('errorMessage');
+            const successMessage = document.getElementById('successMessage');
+            
+            const pin = pinInput.value.trim();
+            if (pin.length !== 6) {
+                showError('Please enter a 6-digit PIN');
+                return;
+            }
+
+            // Show loading state
+            joinBtn.innerHTML = '<div class="loading"></div> Joining...';
+            joinBtn.disabled = true;
+            errorMessage.style.display = 'none';
+            successMessage.style.display = 'none';
+
+            try {
+                const formData = new FormData();
+                formData.append('pin_code', pin);
+
+                const response = await fetch('/join_by_pin', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.detail || 'Invalid PIN');
+                }
+
+                const data = await response.json();
+                
+                // Show success message
+                successMessage.textContent = `Successfully joined ${data.user_name}'s session!`;
+                successMessage.style.display = 'block';
+                
+                // Redirect after a brief delay
+                setTimeout(() => {
+                    window.location.href = `${baseUrl}/mobile?session_id=${data.session_id}`;
+                }, 1500);
+
+            } catch (error) {
+                console.error('Failed to join session:', error);
+                showError(error.message || 'Failed to join session');
+            } finally {
+                joinBtn.innerHTML = 'Join Session';
+                joinBtn.disabled = pin.length !== 6;
+            }
+        }
+
+        function showError(message) {
+            const errorMessage = document.getElementById('errorMessage');
+            errorMessage.textContent = message;
+            errorMessage.style.display = 'block';
+            setTimeout(() => {
+                errorMessage.style.display = 'none';
+            }, 5000);
+        }
+
+        // Set up join button click handler
+        document.getElementById('joinBtn').addEventListener('click', joinSession);
+
+        // Initialize page
+        document.addEventListener('DOMContentLoaded', async function() {
+            await loadConfig();
+            await loadSessions();
+            
+            // Refresh sessions every 30 seconds
+            setInterval(loadSessions, 30000);
+        });
+    </script>
+</body>
+</html>

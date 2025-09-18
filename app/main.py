@@ -6,9 +6,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 import uuid
-import qrcode
-from io import BytesIO
-import base64
 import asyncio
 from datetime import datetime, timedelta
 import os
@@ -99,10 +96,74 @@ def categorize_question(question: str) -> str:
     
     return 'general'
 
+def is_mobile_device(user_agent: str) -> bool:
+	"""Detect if the request is from a mobile device based on User-Agent."""
+	mobile_indicators = [
+		'Mobile', 'Android', 'iPhone', 'iPad', 'iPod', 'BlackBerry', 
+		'Windows Phone', 'Opera Mini', 'IEMobile', 'Mobile Safari'
+	]
+	return any(indicator in user_agent for indicator in mobile_indicators)
+
+def get_base_url():
+	"""Get the correct base URL for the current environment."""
+	# Check if running in GitHub Codespaces
+	codespace_name = os.getenv("CODESPACE_NAME")
+	if codespace_name:
+		return f"https://{codespace_name}-8000.app.github.dev"
+	
+	# Check for other common environment variables
+	github_workspace = os.getenv("GITHUB_WORKSPACE")
+	if github_workspace:
+		# Fallback for GitHub environments
+		return "https://localhost:8000"  # This should be customized based on your setup
+	
+	# Default to localhost for local development
+	return "http://localhost:8000"
+
 @app.get("/", response_class=HTMLResponse)
 async def get_control_panel(request: Request):
-	"""Serve the main control panel page."""
+	"""Serve the main control panel page or redirect mobile users."""
+	user_agent = request.headers.get("user-agent", "")
+	
+	# If mobile device, redirect to mobile landing page
+	if is_mobile_device(user_agent):
+		return templates.TemplateResponse("mobile_landing.html", {"request": request})
+	
+	# Desktop users get the control panel
 	return templates.TemplateResponse("index.html", {"request": request})
+
+@app.get("/desktop", response_class=HTMLResponse)
+async def get_desktop_panel(request: Request):
+	"""Force desktop control panel (bypass mobile detection)."""
+	return templates.TemplateResponse("index.html", {"request": request})
+
+@app.get("/api/config")
+async def get_config():
+	"""Get configuration including the correct base URL."""
+	return {
+		"base_url": get_base_url(),
+		"join_url": f"{get_base_url()}/join"
+	}
+
+@app.get("/api/sessions")
+async def get_active_sessions(db: Session = Depends(get_db)):
+	"""Get list of active sessions for mobile users to join."""
+	# Get sessions that haven't expired
+	active_sessions = db.query(SessionModel).filter(
+		SessionModel.expires_at > datetime.utcnow()
+	).order_by(desc(SessionModel.created_at)).limit(10).all()
+	
+	return [
+		{
+			"session_id": session.session_id,
+			"user_name": session.user_name,
+			"pin_code": session.pin_code,  # Show PIN for easy joining
+			"is_active": session.is_active,
+			"created_at": session.created_at.isoformat(),
+			"expires_at": session.expires_at.isoformat()
+		}
+		for session in active_sessions
+	]
 
 @app.get("/health")
 async def health_check():
@@ -116,7 +177,7 @@ async def health_check():
 
 @app.post("/create_session")
 async def create_session(user_name: str = Form(...), db: Session = Depends(get_db)):
-	"""Create a new session and generate a QR code with PIN."""
+	"""Create a new session with PIN code for mobile access."""
 	# Generate a unique session ID and PIN code
 	session_id = str(uuid.uuid4())
 	pin_code = generate_pin_code()
@@ -124,20 +185,6 @@ async def create_session(user_name: str = Form(...), db: Session = Depends(get_d
 	# Ensure PIN is unique
 	while db.query(SessionModel).filter(SessionModel.pin_code == pin_code).first():
 		pin_code = generate_pin_code()
-    
-	# Create URL for the mobile client to connect to
-	join_url = f"http://localhost:8000/mobile?session_id={session_id}"
-    
-	# Generate QR Code
-	qr = qrcode.QRCode(version=1, box_size=10, border=5)
-	qr.add_data(join_url)
-	qr.make(fit=True)
-	img = qr.make_image(fill_color="black", back_color="white")
-    
-	# Save QR code to a bytes buffer and encode it in base64 for HTML
-	buffered = BytesIO()
-	img.save(buffered, format="PNG")
-	img_str = base64.b64encode(buffered.getvalue()).decode()
     
 	# Store the session in database
 	db_session = SessionModel(
@@ -153,14 +200,12 @@ async def create_session(user_name: str = Form(...), db: Session = Depends(get_d
     
 	return {
 		"session_id": session_id,
-		"pin_code": pin_code,
-		"qr_code_data": f"data:image/png;base64,{img_str}",
-		"join_url": join_url
+		"pin_code": pin_code
 	}
 
 @app.post("/join_by_pin")
 async def join_by_pin(pin_code: str = Form(...), db: Session = Depends(get_db)):
-	"""Join session using PIN code instead of QR."""
+	"""Join session using PIN code."""
 	db_session = db.query(SessionModel).filter(SessionModel.pin_code == pin_code).first()
 	
 	if not db_session:
@@ -169,9 +214,12 @@ async def join_by_pin(pin_code: str = Form(...), db: Session = Depends(get_db)):
 	if db_session.expires_at < datetime.utcnow():
 		raise HTTPException(status_code=410, detail="Session expired")
 	
+	# Update session to indicate mobile client is joining
+	db_session.updated_at = datetime.utcnow()
+	db.commit()
+	
 	return {
 		"session_id": db_session.session_id,
-		"join_url": f"http://localhost:8000/mobile?session_id={db_session.session_id}",
 		"user_name": db_session.user_name
 	}
 
@@ -409,12 +457,22 @@ async def cleanup_sessions():
 			print(f"Cleaned up {len(expired_sessions)} expired sessions")
 
 VOSK_MODEL_PATH = "vosk-model-small-en-us-0.15"  # Adjust if your model folder is different
-if not os.path.exists(VOSK_MODEL_PATH):
-	raise Exception(f"Please download the model from https://alphacephei.com/vosk/models and unpack as '{VOSK_MODEL_PATH}' in the current folder.")
-vosk_model = Model(VOSK_MODEL_PATH)
+vosk_model = None
+if os.path.exists(VOSK_MODEL_PATH):
+	try:
+		vosk_model = Model(VOSK_MODEL_PATH)
+		print(f"Vosk model loaded from {VOSK_MODEL_PATH}")
+	except Exception as e:
+		print(f"Warning: Could not load Vosk model: {e}")
+		vosk_model = None
+else:
+	print(f"Warning: Vosk model not found at {VOSK_MODEL_PATH}. Speech recognition will not be available.")
 
 async def transcribe_audio(audio_data: bytes) -> str:
 	"""Transcribe audio using Vosk (local, open-source) with streaming optimization"""
+	if vosk_model is None:
+		return "Speech recognition not available - Vosk model not loaded"
+	
 	try:
 		# Create recognizer with smaller buffer for faster processing
 		rec = KaldiRecognizer(vosk_model, 16000)

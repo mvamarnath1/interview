@@ -1,12 +1,10 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Interview Prompts - {{ user_name }}</title>
+    <title>Interview Assistant - {{ user_name }}</title>
     <style>
-        /* Add the same modern CSS here */
         * {
             margin: 0;
             padding: 0;
@@ -14,334 +12,523 @@
         }
 
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
             background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #374151 100%);
             min-height: 100vh;
             color: #f1f5f9;
         }
 
-        .mobile-header {
-            background: linear-gradient(135deg, #6366f1, #4f46e5);
+        .header {
+            background: linear-gradient(135deg, #4f46e5, #7c3aed);
             color: white;
             padding: 1.5rem;
             text-align: center;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
         }
 
-        .prompts-container {
+        .header h1 {
+            font-size: 1.3rem;
+            font-weight: 700;
+            margin-bottom: 0.25rem;
+        }
+
+        .header p {
+            opacity: 0.9;
+            font-size: 0.9rem;
+        }
+
+        .status-bar {
+            background: rgba(79, 70, 229, 0.1);
+            border-bottom: 1px solid rgba(79, 70, 229, 0.2);
             padding: 1rem;
-        }
-
-        .prompt-card {
-            background: #1e293b;
-            padding: 1rem;
-            border-radius: 8px;
-            margin-bottom: 1rem;
-            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.4), 0 4px 6px -2px rgba(0, 0, 0, 0.3);
-            border-left: 4px solid #6366f1;
-        }
-
-        .prompt-question {
-            font-weight: 600;
-            color: #6366f1;
-            margin-bottom: 0.5rem;
-        }
-
-        .welcome-message {
             text-align: center;
-            padding: 2rem;
-            color: #94a3b8;
         }
 
-        .loading {
-            display: inline-block;
-            width: 20px;
-            height: 20px;
-            border: 3px solid #334155;
-            border-top: 3px solid #6366f1;
+        .status-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.9rem;
+            font-weight: 600;
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
             border-radius: 50%;
-            animation: spin 1s linear infinite;
+            background: #10b981;
+            animation: pulse 2s infinite;
+        }
+
+        .status-dot.connecting {
+            background: #f59e0b;
+        }
+
+        .status-dot.disconnected {
+            background: #ef4444;
+            animation: none;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+
+        .container {
+            padding: 1rem;
+            max-width: 600px;
             margin: 0 auto;
         }
 
-        @keyframes spin {
-            0% {
-                transform: rotate(0deg);
-            }
+        .welcome-section {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 16px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+            text-align: center;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
 
-            100% {
-                transform: rotate(360deg);
-            }
+        .welcome-section h2 {
+            color: #60a5fa;
+            font-size: 1.2rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .welcome-section p {
+            color: #cbd5e1;
+            font-size: 0.9rem;
+            line-height: 1.5;
+        }
+
+        .prompts-container {
+            min-height: 300px;
+        }
+
+        .prompt-card {
+            background: rgba(255, 255, 255, 0.08);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            padding: 1.5rem;
+            margin-bottom: 1rem;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            border-left: 4px solid #4f46e5;
+            transform: translateY(20px);
+            opacity: 0;
+            animation: slideIn 0.5s ease forwards;
         }
 
         @keyframes slideIn {
-            0% {
-                transform: translateX(-100%);
-                opacity: 0;
-            }
-
-            100% {
-                transform: translateX(0);
+            to {
+                transform: translateY(0);
                 opacity: 1;
             }
         }
 
-        @keyframes pulse {
-
-            0%,
-            100% {
-                transform: scale(1);
-            }
-
-            50% {
-                transform: scale(1.05);
-            }
+        .prompt-header {
+            display: flex;
+            justify-content: between;
+            align-items: center;
+            margin-bottom: 1rem;
         }
 
-        .prompt-card {
+        .prompt-type {
+            background: linear-gradient(135deg, #4f46e5, #7c3aed);
+            color: white;
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .prompt-time {
+            color: #94a3b8;
+            font-size: 0.8rem;
+        }
+
+        .prompt-question {
+            font-weight: 600;
+            color: #60a5fa;
+            margin-bottom: 1rem;
+            font-size: 1rem;
+            line-height: 1.5;
+        }
+
+        .prompt-suggestions {
+            background: rgba(16, 185, 129, 0.1);
+            border: 1px solid rgba(16, 185, 129, 0.2);
+            border-radius: 12px;
+            padding: 1rem;
+        }
+
+        .prompt-suggestions h4 {
+            color: #10b981;
+            font-size: 0.9rem;
+            margin-bottom: 0.75rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .suggestion-list {
+            list-style: none;
+        }
+
+        .suggestion-list li {
+            color: #cbd5e1;
+            font-size: 0.85rem;
+            margin-bottom: 0.5rem;
+            padding-left: 1rem;
+            position: relative;
+            line-height: 1.4;
+        }
+
+        .suggestion-list li::before {
+            content: '→';
+            position: absolute;
+            left: 0;
+            color: #10b981;
+            font-weight: bold;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 3rem 1rem;
+            color: #64748b;
+        }
+
+        .empty-state .icon {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            opacity: 0.5;
+        }
+
+        .empty-state h3 {
+            font-size: 1.1rem;
+            margin-bottom: 0.5rem;
+            color: #94a3b8;
+        }
+
+        .empty-state p {
+            font-size: 0.9rem;
+            line-height: 1.5;
+        }
+
+        .controls {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: rgba(15, 23, 42, 0.95);
+            backdrop-filter: blur(10px);
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 1rem;
+        }
+
+        .controls-content {
+            max-width: 600px;
+            margin: 0 auto;
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+        }
+
+        .record-button {
+            flex: 1;
+            background: linear-gradient(135deg, #ef4444, #dc2626);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            padding: 1rem;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+        }
+
+        .record-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(239, 68, 68, 0.4);
+        }
+
+        .record-button.recording {
+            background: linear-gradient(135deg, #dc2626, #b91c1c);
+            animation: recordPulse 1.5s infinite;
+        }
+
+        @keyframes recordPulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+        }
+
+        .leave-button {
+            background: rgba(255, 255, 255, 0.1);
+            color: #cbd5e1;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 12px;
+            padding: 1rem;
+            font-size: 0.9rem;
+            cursor: pointer;
             transition: all 0.3s ease;
         }
 
-        .prompt-card:hover {
-            transform: scale(1.02);
-            box-shadow: 0 15px 25px -3px rgba(0, 0, 0, 0.5);
+        .leave-button:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        /* Add padding to body to account for fixed controls */
+        body {
+            padding-bottom: 100px;
+        }
+
+        .fade-in {
+            animation: fadeIn 0.5s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
         }
     </style>
 </head>
-
 <body>
-    <div class="mobile-header">
-        <h1>🎤 {{ user_name }}'s Interview</h1>
-        <p>Real-time prompts will appear here</p>
-        <div id="listeningIndicator" style="display: none; margin-top: 0.5rem;">
-            <div
-                style="display: inline-block; background: #10b981; color: white; padding: 0.3rem 0.8rem; border-radius: 20px; font-size: 0.8rem; animation: pulse 1s infinite;">
-                🎧 LISTENING...
+    <div class="header">
+        <h1>🎤 Interview Assistant</h1>
+        <p>{{ user_name }}'s Session</p>
+    </div>
+
+    <div class="status-bar">
+        <div class="status-indicator" id="statusIndicator">
+            <div class="status-dot connecting" id="statusDot"></div>
+            <span id="statusText">Connecting to session...</span>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="welcome-section">
+            <h2>🚀 Ready to Excel!</h2>
+            <p>Your personalized interview prompts will appear here in real-time. Stay confident and let the AI guide you to success!</p>
+        </div>
+
+        <div class="prompts-container" id="promptsContainer">
+            <div class="empty-state" id="emptyState">
+                <div class="icon">💭</div>
+                <h3>Waiting for Questions</h3>
+                <p>Interview prompts will appear here automatically when the interviewer asks questions. Stay ready!</p>
             </div>
         </div>
     </div>
 
-    <div class="prompts-container">
-        <div id="welcomeMessage" class="welcome-message">
-            <div class="loading"></div>
-            <p style="margin-top: 1rem;">Connected. Waiting for prompts...</p>
+    <div class="controls">
+        <div class="controls-content">
+            <button class="record-button" id="recordButton" onclick="toggleRecording()">
+                <span id="recordIcon">🎤</span>
+                <span id="recordText">Start Recording</span>
+            </button>
+            <button class="leave-button" onclick="leaveSession()">
+                Leave
+            </button>
         </div>
-        <div id="prompts"></div>
     </div>
 
     <script>
-        const sessionId = "{{ session_id }}";
-        const userName = "{{ user_name }}";
+        let socket;
+        let isRecording = false;
+        let mediaRecorder;
+        let audioChunks = [];
+        let baseUrl = '';
 
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const ws = new WebSocket(`${protocol}//${window.location.host}/ws/${sessionId}/mobile`);
-
-        ws.onopen = function (event) {
-            console.log("Connected to server");
-        };
-
-        ws.onmessage = function (event) {
-            document.getElementById('welcomeMessage').style.display = 'none';
-
+        // Load configuration
+        async function loadConfig() {
             try {
-                const data = JSON.parse(event.data);
-
-                // Handle ultra-compressed message format for millisecond responses
-                if (data.t === 'p') {  // type: processing
-                    showListeningIndicator();
-                } else if (data.t === 'r') {  // type: response
-                    hideListeningIndicator();
-                    // Enhanced response with scoring
-                    if (data.s && data.f) {
-                        addEnhancedAIResponse(data.q, data.a, data.s, data.f, data.src);
-                    } else {
-                        addAIResponse(data.q, data.a);  // Fallback to simple format
-                    }
-                } else if (data.type === 'audio_processing') {
-                    showListeningIndicator();
-                } else if (data.type === 'ai_response') {
-                    hideListeningIndicator();
-                    addAIResponse(data.transcription, data.response);
-                } else if (data.type === 'screen_share_started') {
-                    showStatus('📺 Screen sharing active - Ready for questions!');
-                } else if (data.question && data.answer) {
-                    // Regular prompt format
-                    addPrompt(data.question, data.answer);
-                } else {
-                    // Fallback for plain text
-                    addPrompt('New Message', JSON.stringify(data));
-                }
-            } catch (e) {
-                // Plain text message
-                addPrompt('New Message', event.data);
+                const response = await fetch('/api/config');
+                const config = await response.json();
+                baseUrl = config.base_url;
+            } catch (error) {
+                console.error('Failed to load config:', error);
+                baseUrl = window.location.origin;
             }
-        };
-
-        function showListeningIndicator() {
-            document.getElementById('listeningIndicator').style.display = 'block';
         }
 
-        function hideListeningIndicator() {
-            document.getElementById('listeningIndicator').style.display = 'none';
-        }
-
-        function showStatus(message) {
-            const statusDiv = document.createElement('div');
-            statusDiv.style.cssText = `
-                position: fixed; top: 20px; right: 20px; 
-                background: #6366f1; color: white; 
-                padding: 0.5rem 1rem; border-radius: 20px; 
-                font-size: 0.8rem; z-index: 1000;
-                animation: slideIn 0.3s ease-out;
-            `;
-            statusDiv.textContent = message;
-            document.body.appendChild(statusDiv);
-
-            setTimeout(() => {
-                statusDiv.remove();
-            }, 3000);
-        }
-
-        function addPrompt(question, answer) {
-            const promptsContainer = document.getElementById('prompts');
-            const promptDiv = document.createElement('div');
-            promptDiv.className = 'prompt-card';
-
-            promptDiv.innerHTML = `
-                <div class="prompt-question">${question}</div>
-                <div>${answer}</div>
-                <div style="font-size: 0.8rem; color: #94a3b8; margin-top: 0.5rem;">
-                    ${new Date().toLocaleTimeString()}
-                </div>
-            `;
-
-            promptsContainer.prepend(promptDiv);
-        }
-
-        function addAIResponse(transcription, response) {
-            const promptsContainer = document.getElementById('prompts');
-            const promptDiv = document.createElement('div');
-            promptDiv.className = 'prompt-card';
-            promptDiv.style.borderLeft = '4px solid #10b981'; // Green border for AI responses
-            promptDiv.style.animation = 'slideIn 0.3s ease-out'; // Fast animation
-
-            promptDiv.innerHTML = `
-                <div class="prompt-question">⚡ QUESTION DETECTED</div>
-                <div style="background: #374151; padding: 0.8rem; border-radius: 6px; margin: 0.5rem 0;">
-                    <div style="color: #fbbf24; font-weight: 600; font-size: 0.9rem;">❓ "${transcription}"</div>
-                </div>
-                <div style="background: #059669; padding: 0.8rem; border-radius: 6px; color: white; font-weight: 600; font-size: 1rem;">
-                    💡 ${response}
-                </div>
-                <div style="font-size: 0.8rem; color: #94a3b8; margin-top: 0.5rem; text-align: center;">
-                    ⏱️ ${new Date().toLocaleTimeString()}
-                </div>
-            `;
-
-            promptsContainer.prepend(promptDiv);
-
-            // Add immediate visual feedback
-            promptDiv.style.transform = 'scale(1.02)';
-            setTimeout(() => {
-                promptDiv.style.transform = 'scale(1)';
-            }, 200);
-
-            // Add vibration and sound for instant notification
-            if (navigator.vibrate) {
-                navigator.vibrate([100, 50, 100]); // Double pulse
-            }
-
-            // Flash the screen border briefly for attention
-            document.body.style.border = '3px solid #10b981';
-            setTimeout(() => {
-                document.body.style.border = 'none';
-            }, 500);
-        }
-
-        function addEnhancedAIResponse(transcription, response, score, feedback, source) {
-            const promptsContainer = document.getElementById('prompts');
-            const promptDiv = document.createElement('div');
-            promptDiv.className = 'prompt-card';
-
-            // Color coding based on score
-            let borderColor = '#ef4444'; // Red for low scores
-            let scoreColor = '#ef4444';
-            let scoreEmoji = '❌';
-
-            if (score >= 8) {
-                borderColor = '#10b981'; // Green for high scores
-                scoreColor = '#10b981';
-                scoreEmoji = '🎯';
-            } else if (score >= 6) {
-                borderColor = '#f59e0b'; // Yellow for medium scores
-                scoreColor = '#f59e0b';
-                scoreEmoji = '⚡';
-            }
-
-            promptDiv.style.borderLeft = `4px solid ${borderColor}`;
-            promptDiv.style.animation = 'slideIn 0.3s ease-out';
-
-            // Source indicator
-            let sourceIcon = '🤖';
-            if (source === 'static_cache') sourceIcon = '⚡';
-            else if (source === 'dynamic_cache') sourceIcon = '🧠';
-            else if (source === 'ai_generated') sourceIcon = '✨';
-
-            promptDiv.innerHTML = `
-                <div class="prompt-question">
-                    ${sourceIcon} AI COACH RESPONSE
-                    <span style="float: right; color: ${scoreColor}; font-weight: bold;">
-                        ${scoreEmoji} ${score.toFixed(1)}/10
-                    </span>
-                </div>
-                <div style="background: #374151; padding: 0.8rem; border-radius: 6px; margin: 0.5rem 0;">
-                    <div style="color: #fbbf24; font-weight: 600; font-size: 0.9rem;">❓ "${transcription}"</div>
-                </div>
-                <div style="background: ${borderColor}; padding: 0.8rem; border-radius: 6px; color: white; font-weight: 600; font-size: 1rem;">
-                    💡 ${response}
-                </div>
-                <div style="background: #1f2937; padding: 0.6rem; border-radius: 6px; margin-top: 0.5rem;">
-                    <div style="color: #94a3b8; font-size: 0.85rem; font-style: italic;">
-                        💬 ${feedback}
-                    </div>
-                </div>
-                <div style="font-size: 0.8rem; color: #94a3b8; margin-top: 0.5rem; text-align: center;">
-                    ⏱️ ${new Date().toLocaleTimeString()} | ${source.replace('_', ' ')}
-                </div>
-            `;
-
-            promptsContainer.prepend(promptDiv);
-
-            // Enhanced visual feedback based on score
-            if (score >= 8) {
-                promptDiv.style.transform = 'scale(1.05)';
-                promptDiv.style.boxShadow = '0 0 20px rgba(16, 185, 129, 0.3)';
+        // Initialize WebSocket connection
+        function connectWebSocket() {
+            const sessionId = "{{ session_id }}";
+            
+            // Use the base URL to construct WebSocket URL
+            let wsUrl;
+            if (baseUrl) {
+                // Extract host from base URL for WebSocket
+                const url = new URL(baseUrl);
+                const protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+                wsUrl = `${protocol}//${url.host}/ws/${sessionId}/mobile`;
             } else {
-                promptDiv.style.transform = 'scale(1.02)';
+                // Fallback to current location
+                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                wsUrl = `${protocol}//${window.location.host}/ws/${sessionId}/mobile`;
             }
+            
+            socket = new WebSocket(wsUrl);
 
-            setTimeout(() => {
-                promptDiv.style.transform = 'scale(1)';
-                promptDiv.style.boxShadow = 'none';
-            }, 300);
+            socket.onopen = function() {
+                updateStatus('connected', 'Connected to session');
+                console.log('Connected to session');
+            };
 
-            // Enhanced vibration based on score
-            if (navigator.vibrate) {
-                if (score >= 8) {
-                    navigator.vibrate([200, 100, 200]); // Success pattern
-                } else if (score >= 6) {
-                    navigator.vibrate([100, 50, 100]); // Normal pattern
-                } else {
-                    navigator.vibrate([50]); // Gentle pattern
-                }
-            }
+            socket.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+                handleIncomingMessage(data);
+            };
 
-            // Enhanced border flash based on score
-            document.body.style.border = `3px solid ${borderColor}`;
-            setTimeout(() => {
-                document.body.style.border = 'none';
-            }, 500);
+            socket.onclose = function() {
+                updateStatus('disconnected', 'Connection lost - Reconnecting...');
+                console.log('WebSocket connection closed, attempting to reconnect...');
+                setTimeout(connectWebSocket, 3000);
+            };
+
+            socket.onerror = function(error) {
+                updateStatus('disconnected', 'Connection error');
+                console.error('WebSocket error:', error);
+            };
         }
+
+        function updateStatus(status, text) {
+            const statusDot = document.getElementById('statusDot');
+            const statusText = document.getElementById('statusText');
+            
+            statusDot.className = `status-dot ${status}`;
+            statusText.textContent = text;
+        }
+
+        function handleIncomingMessage(data) {
+            if (data.type === 'prompt') {
+                displayPrompt(data);
+            }
+        }
+
+        function displayPrompt(promptData) {
+            const container = document.getElementById('promptsContainer');
+            const emptyState = document.getElementById('emptyState');
+            
+            // Hide empty state
+            if (emptyState) {
+                emptyState.style.display = 'none';
+            }
+
+            // Create prompt card
+            const promptCard = document.createElement('div');
+            promptCard.className = 'prompt-card fade-in';
+            
+            const currentTime = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+            
+            promptCard.innerHTML = `
+                <div class="prompt-header">
+                    <span class="prompt-type">${promptData.question_type || 'General'}</span>
+                    <span class="prompt-time">${currentTime}</span>
+                </div>
+                <div class="prompt-question">${promptData.question}</div>
+                <div class="prompt-suggestions">
+                    <h4>💡 Suggested talking points:</h4>
+                    <ul class="suggestion-list">
+                        ${promptData.suggestions.map(suggestion => `<li>${suggestion}</li>`).join('')}
+                    </ul>
+                </div>
+            `;
+
+            // Add to container (newest at top)
+            container.insertBefore(promptCard, container.firstChild);
+
+            // Limit to 10 prompts max
+            const cards = container.querySelectorAll('.prompt-card');
+            if (cards.length > 10) {
+                cards[cards.length - 1].remove();
+            }
+
+            // Scroll to top
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        async function toggleRecording() {
+            const recordButton = document.getElementById('recordButton');
+            const recordIcon = document.getElementById('recordIcon');
+            const recordText = document.getElementById('recordText');
+
+            if (!isRecording) {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    mediaRecorder = new MediaRecorder(stream);
+                    audioChunks = [];
+
+                    mediaRecorder.ondataavailable = event => {
+                        audioChunks.push(event.data);
+                    };
+
+                    mediaRecorder.onstop = () => {
+                        const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+                        sendAudioData(audioBlob);
+                        stream.getTracks().forEach(track => track.stop());
+                    };
+
+                    mediaRecorder.start();
+                    isRecording = true;
+                    
+                    recordButton.classList.add('recording');
+                    recordIcon.textContent = '⏹️';
+                    recordText.textContent = 'Stop Recording';
+                    
+                } catch (error) {
+                    console.error('Error accessing microphone:', error);
+                    alert('Could not access microphone. Please check permissions.');
+                }
+            } else {
+                mediaRecorder.stop();
+                isRecording = false;
+                
+                recordButton.classList.remove('recording');
+                recordIcon.textContent = '🎤';
+                recordText.textContent = 'Start Recording';
+            }
+        }
+
+        function sendAudioData(audioBlob) {
+            const formData = new FormData();
+            formData.append('audio', audioBlob, 'recording.wav');
+            formData.append('session_id', "{{ session_id }}");
+
+            fetch('/upload_audio', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log('Audio uploaded successfully:', data);
+            })
+            .catch(error => {
+                console.error('Error uploading audio:', error);
+            });
+        }
+
+        function leaveSession() {
+            if (confirm('Are you sure you want to leave this session?')) {
+                if (socket) {
+                    socket.close();
+                }
+                window.location.href = '/';
+            }
+        }
+
+        // Initialize the application
+        document.addEventListener('DOMContentLoaded', async function() {
+            await loadConfig();
+            connectWebSocket();
+        });
     </script>
 </body>
-
 </html>

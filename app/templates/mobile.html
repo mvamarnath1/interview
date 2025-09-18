@@ -150,7 +150,12 @@
                     showListeningIndicator();
                 } else if (data.t === 'r') {  // type: response
                     hideListeningIndicator();
-                    addAIResponse(data.q, data.a);  // q: question, a: answer
+                    // Enhanced response with scoring
+                    if (data.s && data.f) {
+                        addEnhancedAIResponse(data.q, data.a, data.s, data.f, data.src);
+                    } else {
+                        addAIResponse(data.q, data.a);  // Fallback to simple format
+                    }
                 } else if (data.type === 'audio_processing') {
                     showListeningIndicator();
                 } else if (data.type === 'ai_response') {
@@ -247,6 +252,91 @@
 
             // Flash the screen border briefly for attention
             document.body.style.border = '3px solid #10b981';
+            setTimeout(() => {
+                document.body.style.border = 'none';
+            }, 500);
+        }
+
+        function addEnhancedAIResponse(transcription, response, score, feedback, source) {
+            const promptsContainer = document.getElementById('prompts');
+            const promptDiv = document.createElement('div');
+            promptDiv.className = 'prompt-card';
+
+            // Color coding based on score
+            let borderColor = '#ef4444'; // Red for low scores
+            let scoreColor = '#ef4444';
+            let scoreEmoji = '❌';
+
+            if (score >= 8) {
+                borderColor = '#10b981'; // Green for high scores
+                scoreColor = '#10b981';
+                scoreEmoji = '🎯';
+            } else if (score >= 6) {
+                borderColor = '#f59e0b'; // Yellow for medium scores
+                scoreColor = '#f59e0b';
+                scoreEmoji = '⚡';
+            }
+
+            promptDiv.style.borderLeft = `4px solid ${borderColor}`;
+            promptDiv.style.animation = 'slideIn 0.3s ease-out';
+
+            // Source indicator
+            let sourceIcon = '🤖';
+            if (source === 'static_cache') sourceIcon = '⚡';
+            else if (source === 'dynamic_cache') sourceIcon = '🧠';
+            else if (source === 'ai_generated') sourceIcon = '✨';
+
+            promptDiv.innerHTML = `
+                <div class="prompt-question">
+                    ${sourceIcon} AI COACH RESPONSE
+                    <span style="float: right; color: ${scoreColor}; font-weight: bold;">
+                        ${scoreEmoji} ${score.toFixed(1)}/10
+                    </span>
+                </div>
+                <div style="background: #374151; padding: 0.8rem; border-radius: 6px; margin: 0.5rem 0;">
+                    <div style="color: #fbbf24; font-weight: 600; font-size: 0.9rem;">❓ "${transcription}"</div>
+                </div>
+                <div style="background: ${borderColor}; padding: 0.8rem; border-radius: 6px; color: white; font-weight: 600; font-size: 1rem;">
+                    💡 ${response}
+                </div>
+                <div style="background: #1f2937; padding: 0.6rem; border-radius: 6px; margin-top: 0.5rem;">
+                    <div style="color: #94a3b8; font-size: 0.85rem; font-style: italic;">
+                        💬 ${feedback}
+                    </div>
+                </div>
+                <div style="font-size: 0.8rem; color: #94a3b8; margin-top: 0.5rem; text-align: center;">
+                    ⏱️ ${new Date().toLocaleTimeString()} | ${source.replace('_', ' ')}
+                </div>
+            `;
+
+            promptsContainer.prepend(promptDiv);
+
+            // Enhanced visual feedback based on score
+            if (score >= 8) {
+                promptDiv.style.transform = 'scale(1.05)';
+                promptDiv.style.boxShadow = '0 0 20px rgba(16, 185, 129, 0.3)';
+            } else {
+                promptDiv.style.transform = 'scale(1.02)';
+            }
+
+            setTimeout(() => {
+                promptDiv.style.transform = 'scale(1)';
+                promptDiv.style.boxShadow = 'none';
+            }, 300);
+
+            // Enhanced vibration based on score
+            if (navigator.vibrate) {
+                if (score >= 8) {
+                    navigator.vibrate([200, 100, 200]); // Success pattern
+                } else if (score >= 6) {
+                    navigator.vibrate([100, 50, 100]); // Normal pattern
+                } else {
+                    navigator.vibrate([50]); // Gentle pattern
+                }
+            }
+
+            // Enhanced border flash based on score
+            document.body.style.border = `3px solid ${borderColor}`;
             setTimeout(() => {
                 document.body.style.border = 'none';
             }, 500);

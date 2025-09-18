@@ -18,10 +18,13 @@ from dotenv import load_dotenv
 import google.generativeai as genai
 import numpy as np
 import wave
+import hashlib
+import random
+import string
 # Vosk imports
 from vosk import Model, KaldiRecognizer
 import soundfile as sf
-from .database import get_db, create_tables, Session as SessionModel, Message
+from .database import get_db, create_tables, Session as SessionModel, Message, QuestionCache, UserProgress
 
 # Load environment variables
 load_dotenv()
@@ -66,16 +69,61 @@ templates = Jinja2Templates(directory="app/templates")
 # Structure: active_connections[session_id] = {"mobile": WebSocket, "desktop": WebSocket}
 active_connections = {}
 
+# Helper functions for Phase 1 improvements
+def generate_pin_code() -> str:
+    """Generate a unique 6-digit PIN code."""
+    return ''.join(random.choices(string.digits, k=6))
+
+def hash_question(question: str) -> str:
+    """Create a hash for question similarity matching."""
+    # Normalize question: lowercase, remove punctuation, sort words
+    normalized = ''.join(c.lower() for c in question if c.isalnum() or c.isspace())
+    words = sorted(normalized.split())
+    normalized_text = ' '.join(words)
+    return hashlib.md5(normalized_text.encode()).hexdigest()
+
+def categorize_question(question: str) -> str:
+    """Categorize question type for progress tracking."""
+    question_lower = question.lower()
+    
+    behavioral_keywords = ['tell me about', 'describe a time', 'experience', 'challenge', 'conflict', 'teamwork', 'leadership']
+    technical_keywords = ['algorithm', 'code', 'technical', 'system design', 'database', 'programming']
+    
+    for keyword in behavioral_keywords:
+        if keyword in question_lower:
+            return 'behavioral'
+    
+    for keyword in technical_keywords:
+        if keyword in question_lower:
+            return 'technical'
+    
+    return 'general'
+
 @app.get("/", response_class=HTMLResponse)
 async def get_control_panel(request: Request):
 	"""Serve the main control panel page."""
 	return templates.TemplateResponse("index.html", {"request": request})
 
+@app.get("/health")
+async def health_check():
+	"""Health check endpoint for Docker and monitoring."""
+	return {
+		"status": "healthy",
+		"timestamp": datetime.utcnow().isoformat(),
+		"version": "1.0.0",
+		"features": ["context-aware-ai", "pin-codes", "response-scoring", "dynamic-caching"]
+	}
+
 @app.post("/create_session")
 async def create_session(user_name: str = Form(...), db: Session = Depends(get_db)):
-	"""Create a new session and generate a QR code."""
-	# Generate a unique session ID
+	"""Create a new session and generate a QR code with PIN."""
+	# Generate a unique session ID and PIN code
 	session_id = str(uuid.uuid4())
+	pin_code = generate_pin_code()
+	
+	# Ensure PIN is unique
+	while db.query(SessionModel).filter(SessionModel.pin_code == pin_code).first():
+		pin_code = generate_pin_code()
     
 	# Create URL for the mobile client to connect to
 	join_url = f"http://localhost:8000/mobile?session_id={session_id}"
@@ -94,6 +142,7 @@ async def create_session(user_name: str = Form(...), db: Session = Depends(get_d
 	# Store the session in database
 	db_session = SessionModel(
 		session_id=session_id,
+		pin_code=pin_code,
 		user_name=user_name,
 		is_active=False,
 		expires_at=datetime.utcnow() + timedelta(hours=1)
@@ -104,10 +153,27 @@ async def create_session(user_name: str = Form(...), db: Session = Depends(get_d
     
 	return {
 		"session_id": session_id,
+		"pin_code": pin_code,
 		"qr_code_data": f"data:image/png;base64,{img_str}",
 		"join_url": join_url
 	}
 
+@app.post("/join_by_pin")
+async def join_by_pin(pin_code: str = Form(...), db: Session = Depends(get_db)):
+	"""Join session using PIN code instead of QR."""
+	db_session = db.query(SessionModel).filter(SessionModel.pin_code == pin_code).first()
+	
+	if not db_session:
+		raise HTTPException(status_code=404, detail="Invalid PIN code")
+	
+	if db_session.expires_at < datetime.utcnow():
+		raise HTTPException(status_code=410, detail="Session expired")
+	
+	return {
+		"session_id": db_session.session_id,
+		"join_url": f"http://localhost:8000/mobile?session_id={db_session.session_id}",
+		"user_name": db_session.user_name
+	}
 
 @app.websocket("/ws/{session_id}/{client_type}")
 async def websocket_endpoint(websocket: WebSocket, session_id: str, client_type: str):
@@ -200,15 +266,46 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, client_type:
 							])
 							
 							if is_question or len(transcription.strip()) > 20:  # Process questions or longer statements
-								ai_response = await generate_ai_response(transcription)
+								# Save question to database
+								question_msg = Message(
+									session_id=session_id,
+									message_type="question",
+									content=transcription,
+									sender="desktop"
+								)
+								db.add(question_msg)
+								db.commit()
 								
-								# Send AI response to mobile device (ultra-minimal JSON)
+								# Generate context-aware AI response with scoring
+								ai_result = await generate_ai_response_with_context(transcription, session_id, db)
+								
+								# Save AI response to database
+								response_msg = Message(
+									session_id=session_id,
+									message_type="answer",
+									content=ai_result["response"],
+									sender="ai",
+									ai_score=ai_result["score"],
+									ai_feedback=ai_result["feedback"]
+								)
+								db.add(response_msg)
+								db.commit()
+								
+								# Send enhanced AI response to mobile device
 								if mobile_ws:
 									try:
-										# Compressed JSON format for millisecond transfer
-										compact_response = f'{{"t":"r","q":"{transcription[:50]}","a":"{ai_response}"}}'
-										await mobile_ws.send_text(compact_response)
-									except:
+										# Enhanced JSON with scoring
+										enhanced_response = {
+											"t": "r",  # type: response
+											"q": transcription[:50],
+											"a": ai_result["response"],
+											"s": ai_result["score"],  # score
+											"f": ai_result["feedback"][:100],  # feedback (truncated)
+											"src": ai_result["source"]  # cache source
+										}
+										await mobile_ws.send_text(json.dumps(enhanced_response))
+									except Exception as e:
+										print(f"WebSocket send error: {e}")
 										pass
 						continue
 				except json.JSONDecodeError:
@@ -266,6 +363,11 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, client_type:
 					pass
 		
 		db.close()
+
+@app.get("/join", response_class=HTMLResponse)
+async def get_pin_entry_page(request: Request):
+	"""Serve the PIN entry page for mobile users."""
+	return templates.TemplateResponse("pin_entry.html", {"request": request})
 
 @app.get("/mobile", response_class=HTMLResponse)
 async def get_mobile_client(request: Request, session_id: str, db: Session = Depends(get_db)):
@@ -352,31 +454,153 @@ async def transcribe_audio(audio_data: bytes) -> str:
 		print(f"Transcription error: {e}")
 		return ""
 
-async def generate_ai_response(transcription: str) -> str:
-	"""Generate AI response with millisecond caching + Google Gemini fallback"""
+async def get_conversation_context(session_id: str, db: Session) -> str:
+	"""Get recent conversation history for context awareness."""
+	recent_messages = db.query(Message).filter(
+		Message.session_id == session_id,
+		Message.message_type.in_(['question', 'answer'])
+	).order_by(Message.timestamp.desc()).limit(6).all()
+	
+	if not recent_messages:
+		return ""
+	
+	context_parts = []
+	for msg in reversed(recent_messages):  # Reverse to get chronological order
+		role = "Q" if msg.message_type == "question" else "A"
+		context_parts.append(f"{role}: {msg.content[:100]}")  # Limit length
+	
+	return "\n".join(context_parts)
+
+async def check_dynamic_cache(session_id: str, question_hash: str, db: Session) -> str:
+	"""Check user-specific dynamic cache."""
+	cached = db.query(QuestionCache).filter(
+		QuestionCache.session_id == session_id,
+		QuestionCache.question_hash == question_hash
+	).first()
+	
+	if cached:
+		# Update usage stats
+		cached.usage_count += 1
+		cached.last_used = datetime.utcnow()
+		db.commit()
+		return cached.response_text
+	
+	return None
+
+async def generate_ai_response_with_context(transcription: str, session_id: str, db: Session) -> dict:
+	"""Generate AI response with context awareness and scoring."""
 	try:
-		# Instant cache lookup for millisecond responses
 		transcription_lower = transcription.lower().strip()
+		question_hash = hash_question(transcription)
 		
-		# Check for exact or partial matches in cache
+		# 1. Check static cache first (fastest)
 		for cached_question, cached_response in RESPONSE_CACHE.items():
 			if cached_question in transcription_lower:
-				print(f"Cache hit for: {transcription_lower}")
-				return cached_response
+				return {
+					"response": cached_response,
+					"score": 9.0,
+					"feedback": "Quick cached response",
+					"source": "static_cache"
+				}
 		
-		# Fallback to Gemini for uncached questions
+		# 2. Check dynamic user cache
+		dynamic_response = await check_dynamic_cache(session_id, question_hash, db)
+		if dynamic_response:
+			return {
+				"response": dynamic_response,
+				"score": 8.5,
+				"feedback": "Personalized cached response",
+				"source": "dynamic_cache"
+			}
+		
+		# 3. Generate new response with context
+		context = await get_conversation_context(session_id, db)
+		
 		model = genai.GenerativeModel('gemini-pro')
 		
-		# Ultra-optimized prompt for millisecond responses (5-8 words max)
-		prompt = f"""Q: "{transcription}"
-A: """
+		# Context-aware prompt with scoring
+		if context:
+			prompt = f"""Previous conversation:
+{context}
+
+Current question: "{transcription}"
+
+Provide a brief 5-8 word coaching tip and rate the question quality 1-10.
+Format: RESPONSE: [tip] | SCORE: [number] | FEEDBACK: [reason]"""
+		else:
+			prompt = f"""Interview question: "{transcription}"
+
+Provide a brief 5-8 word coaching tip and rate the question quality 1-10.
+Format: RESPONSE: [tip] | SCORE: [number] | FEEDBACK: [reason]"""
 		
-		# Maximum speed settings
 		generation_config = genai.types.GenerationConfig(
-			max_output_tokens=15,   # Ultra-limited for 5-8 word responses
-			temperature=0.1,        # Very low for instant, focused answers
-			top_p=0.8,             # Focused sampling for speed
-			top_k=10               # Reduced choices for faster generation
+			max_output_tokens=50,
+			temperature=0.2,
+			top_p=0.8,
+			top_k=15
+		)
+		
+		response = model.generate_content(prompt, generation_config=generation_config)
+		response_text = response.text.strip()
+		
+		# Parse structured response
+		try:
+			parts = response_text.split(" | ")
+			ai_response = parts[0].replace("RESPONSE: ", "").strip()
+			score = float(parts[1].replace("SCORE: ", "").strip())
+			feedback = parts[2].replace("FEEDBACK: ", "").strip()
+		except:
+			# Fallback if parsing fails
+			ai_response = response_text[:50] if response_text else "Focus on key points"
+			score = 7.0
+			feedback = "Generated response"
+		
+		# Cache the response for future use
+		cache_entry = QuestionCache(
+			session_id=session_id,
+			question_hash=question_hash,
+			question_text=transcription,
+			response_text=ai_response,
+			usage_count=1,
+			last_used=datetime.utcnow()
+		)
+		db.add(cache_entry)
+		db.commit()
+		
+		return {
+			"response": ai_response,
+			"score": min(10.0, max(1.0, score)),  # Ensure score is 1-10
+			"feedback": feedback,
+			"source": "ai_generated"
+		}
+		
+	except Exception as e:
+		print(f"AI response error: {e}")
+		return {
+			"response": "Be specific and confident!",
+			"score": 5.0,
+			"feedback": "Default response due to error",
+			"source": "error_fallback"
+		}
+
+# Legacy function for backward compatibility
+async def generate_ai_response(transcription: str) -> str:
+	"""Legacy function - generates simple response without context."""
+	try:
+		transcription_lower = transcription.lower().strip()
+		
+		for cached_question, cached_response in RESPONSE_CACHE.items():
+			if cached_question in transcription_lower:
+				return cached_response
+		
+		model = genai.GenerativeModel('gemini-pro')
+		prompt = f"""Q: "{transcription}"\nA: """
+		
+		generation_config = genai.types.GenerationConfig(
+			max_output_tokens=15,
+			temperature=0.1,
+			top_p=0.8,
+			top_k=10
 		)
 		
 		response = model.generate_content(prompt, generation_config=generation_config)

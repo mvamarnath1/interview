@@ -44,6 +44,17 @@
                         <div id="qrCode"></div>
                     </div>
 
+                    <div class="pin-section"
+                        style="text-align: center; margin: 1rem 0; padding: 1rem; background: #374151; border-radius: 8px;">
+                        <h4 style="margin: 0 0 0.5rem 0; color: #fbbf24;">📱 Quick Join PIN</h4>
+                        <div id="pinCode"
+                            style="font-size: 2rem; font-weight: bold; color: #10b981; letter-spacing: 0.2em;"></div>
+                        <p style="margin: 0.5rem 0 0 0; font-size: 0.9rem; color: #94a3b8;">
+                            Go to <strong style="color: #10b981;">localhost:8000/join</strong> on mobile and enter this
+                            PIN
+                        </p>
+                    </div>
+
                     <div class="url-box">
                         <p>Or open this URL on your phone:</p>
                         <a id="joinUrl" target="_blank" rel="noopener"></a>
@@ -112,6 +123,10 @@
                 const joinUrlEl = document.getElementById('joinUrl');
                 joinUrlEl.href = data.join_url;
                 joinUrlEl.textContent = data.join_url;
+
+                // Display PIN Code
+                const pinCodeEl = document.getElementById('pinCode');
+                pinCodeEl.textContent = data.pin_code;
 
                 // Connect to WebSocket
                 connectSessionWebSocket(currentSessionId);

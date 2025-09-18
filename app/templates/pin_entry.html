@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Join Interview - PIN Entry</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 1rem;
+        }
+
+        .pin-container {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 2rem;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            text-align: center;
+            max-width: 400px;
+            width: 100%;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .logo {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+        }
+
+        h1 {
+            color: #2d3748;
+            margin-bottom: 0.5rem;
+            font-size: 1.5rem;
+            font-weight: 600;
+        }
+
+        .subtitle {
+            color: #718096;
+            margin-bottom: 2rem;
+            font-size: 0.9rem;
+        }
+
+        .pin-form {
+            margin-bottom: 1.5rem;
+        }
+
+        .pin-input {
+            width: 100%;
+            padding: 1rem;
+            font-size: 1.2rem;
+            text-align: center;
+            border: 2px solid #e2e8f0;
+            border-radius: 12px;
+            margin-bottom: 1rem;
+            transition: all 0.3s ease;
+            letter-spacing: 0.2rem;
+            font-weight: 600;
+        }
+
+        .pin-input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+            transform: translateY(-2px);
+        }
+
+        .join-btn {
+            width: 100%;
+            padding: 1rem;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .join-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+
+        .join-btn:active {
+            transform: translateY(0);
+        }
+
+        .join-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .error-message {
+            color: #e53e3e;
+            background: rgba(229, 62, 62, 0.1);
+            padding: 0.8rem;
+            border-radius: 8px;
+            margin-top: 1rem;
+            font-size: 0.9rem;
+            display: none;
+        }
+
+        .loading {
+            display: none;
+            margin-top: 1rem;
+        }
+
+        .loading-spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid #f3f4f6;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        .qr-alternative {
+            margin-top: 2rem;
+            padding-top: 2rem;
+            border-top: 1px solid #e2e8f0;
+            color: #718096;
+            font-size: 0.85rem;
+        }
+
+        .qr-alternative a {
+            color: #667eea;
+            text-decoration: none;
+            font-weight: 500;
+        }
+
+        .qr-alternative a:hover {
+            text-decoration: underline;
+        }
+
+        @media (max-width: 480px) {
+            .pin-container {
+                padding: 1.5rem;
+                margin: 1rem;
+            }
+
+            .logo {
+                font-size: 2.5rem;
+            }
+
+            h1 {
+                font-size: 1.3rem;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="pin-container">
+        <div class="logo">🎤</div>
+        <h1>Join Interview Session</h1>
+        <p class="subtitle">Enter the 6-digit PIN provided by the interviewer</p>
+
+        <form class="pin-form" id="pinForm">
+            <input type="text" class="pin-input" id="pinInput" placeholder="000000" maxlength="6" pattern="[0-9]{6}"
+                inputmode="numeric" autocomplete="off" required>
+            <button type="submit" class="join-btn" id="joinBtn">
+                Join Session
+            </button>
+        </form>
+
+        <div class="error-message" id="errorMessage"></div>
+
+        <div class="loading" id="loadingIndicator">
+            <div class="loading-spinner"></div>
+            <p style="margin-top: 0.5rem; color: #718096;">Joining session...</p>
+        </div>
+
+        <div class="qr-alternative">
+            Don't have a PIN? <a href="#" onclick="showQRInfo()">Learn about QR codes</a>
+        </div>
+    </div>
+
+    <script>
+        const pinInput = document.getElementById('pinInput');
+        const joinBtn = document.getElementById('joinBtn');
+        const errorMessage = document.getElementById('errorMessage');
+        const loadingIndicator = document.getElementById('loadingIndicator');
+        const pinForm = document.getElementById('pinForm');
+
+        // Auto-format PIN input
+        pinInput.addEventListener('input', function (e) {
+            let value = e.target.value.replace(/\D/g, ''); // Remove non-digits
+            if (value.length > 6) {
+                value = value.slice(0, 6);
+            }
+            e.target.value = value;
+
+            // Enable/disable join button
+            joinBtn.disabled = value.length !== 6;
+        });
+
+        // Handle form submission
+        pinForm.addEventListener('submit', async function (e) {
+            e.preventDefault();
+
+            const pinCode = pinInput.value.trim();
+            if (pinCode.length !== 6) {
+                showError('Please enter a valid 6-digit PIN');
+                return;
+            }
+
+            // Show loading state
+            showLoading(true);
+            hideError();
+
+            try {
+                // Submit PIN to backend
+                const formData = new FormData();
+                formData.append('pin_code', pinCode);
+
+                const response = await fetch('/join_by_pin', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    // Success - redirect to mobile interface
+                    window.location.href = result.join_url;
+                } else {
+                    // Handle errors
+                    if (response.status === 404) {
+                        showError('Invalid PIN code. Please check and try again.');
+                    } else if (response.status === 410) {
+                        showError('This session has expired. Please get a new PIN.');
+                    } else {
+                        showError(result.detail || 'Failed to join session. Please try again.');
+                    }
+                }
+            } catch (error) {
+                console.error('Error joining session:', error);
+                showError('Connection error. Please check your internet and try again.');
+            } finally {
+                showLoading(false);
+            }
+        });
+
+        function showError(message) {
+            errorMessage.textContent = message;
+            errorMessage.style.display = 'block';
+        }
+
+        function hideError() {
+            errorMessage.style.display = 'none';
+        }
+
+        function showLoading(show) {
+            if (show) {
+                loadingIndicator.style.display = 'block';
+                joinBtn.disabled = true;
+                pinInput.disabled = true;
+            } else {
+                loadingIndicator.style.display = 'none';
+                joinBtn.disabled = pinInput.value.length !== 6;
+                pinInput.disabled = false;
+            }
+        }
+
+        function showQRInfo() {
+            alert('QR codes can be scanned directly from the interviewer\'s screen. If you don\'t see a QR code, ask your interviewer for the 6-digit PIN instead.');
+        }
+
+        // Focus on PIN input when page loads
+        window.addEventListener('load', function () {
+            pinInput.focus();
+        });
+
+        // Handle paste events for PIN
+        pinInput.addEventListener('paste', function (e) {
+            e.preventDefault();
+            const paste = (e.clipboardData || window.clipboardData).getData('text');
+            const numbers = paste.replace(/\D/g, '').slice(0, 6);
+            pinInput.value = numbers;
+            joinBtn.disabled = numbers.length !== 6;
+        });
+    </script>
+</body>
+
+</html>

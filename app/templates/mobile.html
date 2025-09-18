@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interview Prompts - {{ user_name }}</title>
+    <style>
+        /* Add the same modern CSS here */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #374151 100%);
+            min-height: 100vh;
+            color: #f1f5f9;
+        }
+
+        .mobile-header {
+            background: linear-gradient(135deg, #6366f1, #4f46e5);
+            color: white;
+            padding: 1.5rem;
+            text-align: center;
+        }
+
+        .prompts-container {
+            padding: 1rem;
+        }
+
+        .prompt-card {
+            background: #1e293b;
+            padding: 1rem;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.4), 0 4px 6px -2px rgba(0, 0, 0, 0.3);
+            border-left: 4px solid #6366f1;
+        }
+
+        .prompt-question {
+            font-weight: 600;
+            color: #6366f1;
+            margin-bottom: 0.5rem;
+        }
+
+        .welcome-message {
+            text-align: center;
+            padding: 2rem;
+            color: #94a3b8;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #334155;
+            border-top: 3px solid #6366f1;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="mobile-header">
+        <h1>🎤 {{ user_name }}'s Interview</h1>
+        <p>Real-time prompts will appear here</p>
+    </div>
+
+    <div class="prompts-container">
+        <div id="welcomeMessage" class="welcome-message">
+            <div class="loading"></div>
+            <p style="margin-top: 1rem;">Connected. Waiting for prompts...</p>
+        </div>
+        <div id="prompts"></div>
+    </div>
+
+    <script>
+        const sessionId = "{{ session_id }}";
+        const userName = "{{ user_name }}";
+
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const ws = new WebSocket(`${protocol}//${window.location.host}/ws/${sessionId}/mobile`);
+
+        ws.onopen = function (event) {
+            console.log("Connected to server");
+        };
+
+        ws.onmessage = function (event) {
+            document.getElementById('welcomeMessage').style.display = 'none';
+
+            try {
+                const data = JSON.parse(event.data);
+                addPrompt(data.question, data.answer);
+            } catch (e) {
+                addPrompt('New Message', event.data);
+            }
+        };
+
+        function addPrompt(question, answer) {
+            const promptsContainer = document.getElementById('prompts');
+            const promptDiv = document.createElement('div');
+            promptDiv.className = 'prompt-card';
+
+            promptDiv.innerHTML = `
+                <div class="prompt-question">${question}</div>
+                <div>${answer}</div>
+                <div style="font-size: 0.8rem; color: #94a3b8; margin-top: 0.5rem;">
+                    ${new Date().toLocaleTimeString()}
+                </div>
+            `;
+
+            promptsContainer.prepend(promptDiv);
+        }
+    </script>
+</body>
+
+</html>

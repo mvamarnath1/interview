@@ -267,3 +267,358 @@ body {
     color: #166534;
     border: 1px solid #bbf7d0;
 }
+
+/* Phase 2 Audio & AI Styles */
+.audio-ai-section {
+    border-top: 2px solid var(--border-color);
+    padding-top: 1.5rem;
+}
+
+.audio-ai-section h3 {
+    color: var(--primary-color);
+    margin-bottom: 1.5rem;
+    font-size: 1.4rem;
+    font-weight: 600;
+}
+
+.audio-ai-section h4 {
+    color: var(--text-color);
+    margin-bottom: 1rem;
+    font-size: 1.1rem;
+    font-weight: 500;
+}
+
+.context-setup {
+    background: var(--bg-color);
+    padding: 1.5rem;
+    border-radius: 8px;
+    margin-bottom: 1.5rem;
+    border: 1px solid var(--border-color);
+}
+
+.form-row {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.form-row input,
+.form-row select {
+    padding: 10px 12px;
+    border: 2px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--card-bg);
+    color: var(--text-color);
+    font-size: 0.9rem;
+    transition: border-color 0.3s ease;
+}
+
+.form-row input:focus,
+.form-row select:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+}
+
+.audio-controls,
+.ai-suggestions {
+    background: var(--bg-color);
+    padding: 1.5rem;
+    border-radius: 8px;
+    margin-bottom: 1.5rem;
+    border: 1px solid var(--border-color);
+}
+
+.control-buttons {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 1rem;
+}
+
+.btn-secondary {
+    background: var(--secondary-color);
+    color: white;
+}
+
+.btn-secondary:hover {
+    background: #64748b;
+}
+
+.btn-danger {
+    background: var(--error-color);
+}
+
+.btn-danger:hover {
+    background: #dc2626;
+}
+
+.btn-info {
+    background: #0ea5e9;
+}
+
+.btn-info:hover {
+    background: #0284c7;
+}
+
+.btn-warning {
+    background: var(--warning-color);
+}
+
+.btn-warning:hover {
+    background: #d97706;
+}
+
+.btn-primary {
+    background: var(--primary-color);
+}
+
+.btn-primary:hover {
+    background: var(--primary-hover);
+}
+
+.audio-level {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.level-meter {
+    width: 100px;
+    height: 8px;
+    background: var(--border-color);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.level-bar {
+    height: 100%;
+    background: linear-gradient(90deg, var(--success-color), var(--warning-color), var(--error-color));
+    width: 0%;
+    transition: width 0.1s ease;
+    border-radius: 4px;
+}
+
+.transcription-box,
+.ai-output-box {
+    background: var(--card-bg);
+    border: 2px solid var(--border-color);
+    border-radius: 8px;
+    padding: 1rem;
+    margin-top: 1rem;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.transcription-box h4,
+.ai-output-box h4 {
+    color: var(--primary-color);
+    margin-bottom: 0.5rem;
+    font-size: 1rem;
+}
+
+#transcriptionText {
+    color: var(--text-color);
+    line-height: 1.6;
+    font-size: 0.95rem;
+    background: var(--bg-color);
+    padding: 1rem;
+    border-radius: 6px;
+    border-left: 4px solid var(--success-color);
+}
+
+#aiOutputContent {
+    color: var(--text-color);
+    line-height: 1.6;
+    font-size: 0.95rem;
+}
+
+#aiOutputContent h4 {
+    color: var(--primary-color);
+    margin: 1rem 0 0.5rem 0;
+    font-size: 1.1rem;
+}
+
+#aiOutputContent ul,
+#aiOutputContent ol {
+    margin: 0.5rem 0 1rem 1.5rem;
+}
+
+#aiOutputContent li {
+    margin-bottom: 0.5rem;
+    color: var(--text-color);
+}
+
+#aiOutputContent p {
+    margin-bottom: 0.75rem;
+}
+
+#aiOutputContent strong {
+    color: var(--primary-color);
+    font-weight: 600;
+}
+
+/* Responsive adjustments for mobile */
+@media (max-width: 768px) {
+    .control-buttons {
+        flex-direction: column;
+    }
+
+    .form-row {
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .form-row input,
+    .form-row select {
+        width: 100%;
+        margin-left: 0 !important;
+    }
+
+    .audio-ai-section {
+        padding: 1rem;
+    }
+
+    .context-setup,
+    .audio-controls,
+    .ai-suggestions {
+        padding: 1rem;
+    }
+}
+
+/* Screen Sharing Controls */
+.screen-share-controls {
+    background: var(--card-bg);
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin: 2rem 0;
+    box-shadow: var(--shadow);
+    border: 2px solid var(--success-color);
+    animation: pulse-border 2s infinite;
+}
+
+@keyframes pulse-border {
+    0% {
+        border-color: var(--success-color);
+    }
+
+    50% {
+        border-color: var(--primary-color);
+    }
+
+    100% {
+        border-color: var(--success-color);
+    }
+}
+
+.share-status {
+    background: var(--bg-color);
+    padding: 1rem;
+    border-radius: 8px;
+    margin-bottom: 1.5rem;
+    border-left: 4px solid var(--success-color);
+}
+
+.recording-indicator {
+    font-size: 1.2rem;
+    font-weight: 600;
+    color: var(--error-color);
+    margin-bottom: 0.5rem;
+    animation: blink 1.5s infinite;
+}
+
+@keyframes blink {
+
+    0%,
+    50% {
+        opacity: 1;
+    }
+
+    51%,
+    100% {
+        opacity: 0.5;
+    }
+}
+
+.audio-status {
+    color: var(--text-color);
+    font-size: 1rem;
+}
+
+.share-actions {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+    flex-wrap: wrap;
+}
+
+.audio-preview {
+    background: var(--bg-color);
+    padding: 1.5rem;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+}
+
+.audio-preview h4 {
+    color: var(--primary-color);
+    margin-bottom: 1rem;
+    font-size: 1.1rem;
+}
+
+.audio-preview audio {
+    width: 100%;
+    margin-bottom: 1rem;
+    border-radius: 4px;
+}
+
+.transcription {
+    background: var(--card-bg);
+    padding: 1rem;
+    border-radius: 6px;
+    border-left: 4px solid var(--primary-color);
+    margin-top: 1rem;
+}
+
+.transcription h5 {
+    color: var(--primary-color);
+    margin-bottom: 0.5rem;
+    font-size: 0.95rem;
+    font-weight: 600;
+}
+
+.transcription p {
+    color: var(--text-color);
+    line-height: 1.6;
+    margin-bottom: 1rem;
+}
+
+#aiResponse {
+    background: var(--success-color);
+    color: white;
+    padding: 1rem;
+    border-radius: 6px;
+    font-weight: 500;
+    line-height: 1.5;
+}
+
+/* Responsive adjustments for screen sharing */
+@media (max-width: 768px) {
+    .screen-share-controls {
+        padding: 1rem;
+        margin: 1rem 0;
+    }
+
+    .share-actions {
+        flex-direction: column;
+    }
+
+    .share-actions .btn {
+        width: 100%;
+        justify-content: center;
+    }
+
+    .recording-indicator {
+        font-size: 1rem;
+    }
+}

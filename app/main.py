@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, Form, Depends, UploadFile, File, HTTPException
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, Form, Depends, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -306,41 +306,6 @@ async def cleanup_sessions():
 		if expired_sessions:
 			print(f"Cleaned up {len(expired_sessions)} expired sessions")
 
-# API Routes for admin
-@app.get("/admin", response_class=HTMLResponse)
-async def admin_panel(request: Request, db: Session = Depends(get_db)):
-	"""Admin panel for session management."""
-	sessions = db.query(SessionModel).order_by(desc(SessionModel.created_at)).all()
-	return templates.TemplateResponse(
-		"admin.html",
-		{
-			"request": request,
-			"sessions": sessions
-		}
-	)
-
-@app.get("/admin/session/{session_id}/history")
-async def get_session_history(session_id: str, db: Session = Depends(get_db)):
-	"""Get message history for a session."""
-	messages = db.query(Message).filter(Message.session_id == session_id).order_by(desc(Message.timestamp)).all()
-	return {"messages": [{"content": msg.content, "sender": msg.sender, "timestamp": msg.timestamp.isoformat(), "type": msg.message_type} for msg in messages]}
-
-@app.delete("/admin/session/{session_id}")
-async def delete_session(session_id: str, db: Session = Depends(get_db)):
-	"""Delete a session and all its messages."""
-	# Remove from active connections
-	if session_id in active_connections:
-		del active_connections[session_id]
-	
-	# Delete messages first (foreign key constraint)
-	db.query(Message).filter(Message.session_id == session_id).delete()
-	
-	# Delete session
-	db.query(SessionModel).filter(SessionModel.session_id == session_id).delete()
-	
-	db.commit()
-	return {"message": "Session deleted successfully"}
-
 VOSK_MODEL_PATH = "vosk-model-small-en-us-0.15"  # Adjust if your model folder is different
 if not os.path.exists(VOSK_MODEL_PATH):
 	raise Exception(f"Please download the model from https://alphacephei.com/vosk/models and unpack as '{VOSK_MODEL_PATH}' in the current folder.")
@@ -419,39 +384,6 @@ A: """
 	except Exception as e:
 		print(f"AI response error: {e}")
 		return "Be specific and confident!"
-
-@app.post("/process_audio")
-async def process_audio(file: UploadFile = File(...)):
-	"""Process uploaded audio and return transcription + AI response"""
-	try:
-		# Read audio data
-		audio_data = await file.read()
-		
-		# Transcribe audio
-		transcription = await transcribe_audio(audio_data)
-		
-		if transcription:
-			# Generate AI response
-			ai_response = await generate_ai_response(transcription)
-			
-			return {
-				"transcription": transcription,
-				"ai_response": ai_response,
-				"status": "success"
-			}
-		else:
-			return {
-				"transcription": "",
-				"ai_response": "I couldn't hear that clearly. Could you repeat?",
-				"status": "no_audio"
-			}
-	except Exception as e:
-		print(f"Audio processing error: {e}")
-		return {
-			"transcription": "",
-			"ai_response": "There was an issue processing the audio.",
-			"status": "error"
-		}
 
 # Start cleanup task when app starts
 @app.on_event("startup")

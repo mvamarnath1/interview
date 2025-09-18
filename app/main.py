@@ -1,17 +1,53 @@
-from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, Form
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, Form, Depends, UploadFile, File, HTTPException
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.orm import Session
+from sqlalchemy import desc
 import uuid
 import qrcode
 from io import BytesIO
 import base64
 import asyncio
 from datetime import datetime, timedelta
+import os
+import tempfile
+import json
+from dotenv import load_dotenv
+import google.generativeai as genai
+import numpy as np
+import wave
+# Vosk imports
+from vosk import Model, KaldiRecognizer
+import soundfile as sf
+from .database import get_db, create_tables, Session as SessionModel, Message
+
+# Load environment variables
+load_dotenv()
+
+# Initialize AI services
+genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
+
+# Ultra-fast response cache for common interview questions
+RESPONSE_CACHE = {
+    "tell me about yourself": "Share background, skills, achievements briefly",
+    "what are your strengths": "Be specific with examples",
+    "what are your weaknesses": "Show growth mindset",
+    "why do you want this job": "Connect skills to role",
+    "where do you see yourself": "Show ambition and commitment",
+    "why should we hire you": "Highlight unique value proposition",
+    "describe a challenge": "Use STAR method",
+    "questions for us": "Ask about growth opportunities",
+    "salary expectations": "Research market rates first",
+    "what motivates you": "Connect to role requirements"
+}
 
 # Initialize the FastAPI app
 app = FastAPI(title="Interview Assistant")
+
+# Create database tables on startup
+create_tables()
 
 # Add CORS middleware for future API calls
 app.add_middleware(
@@ -26,8 +62,7 @@ app.add_middleware(
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
 
-# In-memory storage for sessions and connections
-sessions = {}
+# In-memory storage for active WebSocket connections (keep for real-time features)
 # Structure: active_connections[session_id] = {"mobile": WebSocket, "desktop": WebSocket}
 active_connections = {}
 
@@ -37,16 +72,12 @@ async def get_control_panel(request: Request):
 	return templates.TemplateResponse("index.html", {"request": request})
 
 @app.post("/create_session")
-async def create_session(user_name: str = Form(...)):
+async def create_session(user_name: str = Form(...), db: Session = Depends(get_db)):
 	"""Create a new session and generate a QR code."""
 	# Generate a unique session ID
 	session_id = str(uuid.uuid4())
     
 	# Create URL for the mobile client to connect to
-	# For now, we use localhost. In Docker, this will be the container's hostname.
-	# This is the biggest challenge. We need the phone to be able to access the server.
-	# Option 1: Use Ngrok to tunnel (easier for dev). 
-	# Option 2: Ensure phone and laptop are on same network and use laptop's IP.
 	join_url = f"http://localhost:8000/mobile?session_id={session_id}"
     
 	# Generate QR Code
@@ -60,14 +91,16 @@ async def create_session(user_name: str = Form(...)):
 	img.save(buffered, format="PNG")
 	img_str = base64.b64encode(buffered.getvalue()).decode()
     
-	# Store the session with expiration
-	sessions[session_id] = {
-		"user_name": user_name,
-		"session_id": session_id,
-		"is_active": False,
-		"created_at": datetime.now(),
-		"expires_at": datetime.now() + timedelta(hours=1)
-	}
+	# Store the session in database
+	db_session = SessionModel(
+		session_id=session_id,
+		user_name=user_name,
+		is_active=False,
+		expires_at=datetime.utcnow() + timedelta(hours=1)
+	)
+	db.add(db_session)
+	db.commit()
+	db.refresh(db_session)
     
 	return {
 		"session_id": session_id,
@@ -79,77 +112,167 @@ async def create_session(user_name: str = Form(...)):
 @app.websocket("/ws/{session_id}/{client_type}")
 async def websocket_endpoint(websocket: WebSocket, session_id: str, client_type: str):
 	"""Handle WebSocket connections for both desktop and mobile clients."""
-	# Check if session exists
-	if session_id not in sessions:
+	# Check if session exists in database
+	db = next(get_db())
+	db_session = db.query(SessionModel).filter(SessionModel.session_id == session_id).first()
+	
+	if not db_session:
 		try:
 			await websocket.close(code=1008, reason="Session not found")
 		except:
 			pass
+		finally:
+			db.close()
 		return
     
 	# Accept the connection
 	await websocket.accept()
+	
+	# Update session as active
+	db_session.is_active = True
+	db_session.updated_at = datetime.utcnow()
+	db.commit()
     
 	# Initialize the session entry in active_connections if it doesn't exist
 	if session_id not in active_connections:
 		active_connections[session_id] = {"mobile": None, "desktop": None}
     
-	# Store the connection based on its type (desktop or mobile)
+	# Store the WebSocket connection
+	active_connections[session_id][client_type] = websocket
+    
+	# Log connection message
+	message = Message(
+		session_id=session_id,
+		message_type='system',
+		content=f'{client_type} connected',
+		sender='system'
+	)
+	db.add(message)
+	db.commit()
+    
+	# Notify other clients
 	if client_type == "mobile":
-		active_connections[session_id]["mobile"] = websocket
-		# Send a welcome message to the mobile phone
-		await websocket.send_text("Connected. Waiting for session to start...")
-        
-		# NOTIFY THE DESKTOP CLIENT THAT A MOBILE PHONE HAS CONNECTED
-		desktop_connection = active_connections[session_id].get("desktop")
-		if desktop_connection:
+		desktop_ws = active_connections[session_id].get("desktop")
+		if desktop_ws:
 			try:
-				await desktop_connection.send_text("mobile_connected")
-			except Exception as e:
-				print(f"Could not notify desktop of mobile connection: {e}")
-                
+				await desktop_ws.send_text("mobile_connected")
+			except:
+				pass
 	elif client_type == "desktop":
-		active_connections[session_id]["desktop"] = websocket
-		# Check if mobile is already connected and notify desktop immediately
-		if active_connections[session_id].get("mobile"):
+		mobile_ws = active_connections[session_id].get("mobile")
+		if mobile_ws:
 			try:
-				await websocket.send_text("mobile_connected")
-			except Exception as e:
-				print(f"Could not notify new desktop connection of existing mobile: {e}")
+				await mobile_ws.send_text("desktop_connected")
+			except:
+				pass
     
 	try:
 		while True:
-			# Keep the connection open.
-			data = await websocket.receive_text()
-			# You can handle messages from the client here if needed.
-			# For example, if the desktop sends a "start" command, relay it to mobile.
-			print(f"Received from {client_type}: {data}")
-            
+			# Handle both text and binary messages
+			try:
+				# Try to receive text first
+				data = await websocket.receive_text()
+				
+				# Check if it's JSON (for special messages)
+				try:
+					json_data = json.loads(data)
+					if json_data.get("type") == "audio_chunk":
+						# Send immediate "processing" feedback to mobile (minimal JSON)
+						mobile_ws = active_connections.get(session_id, {}).get("mobile")
+						if mobile_ws:
+							try:
+								# Ultra-minimal JSON for speed
+								await mobile_ws.send_text('{"t":"p"}')  # type: processing
+							except:
+								pass
+						
+						# Handle audio data sent as base64
+						audio_data = base64.b64decode(json_data.get("data", ""))
+						
+						# Process audio (fast transcription)
+						transcription = await transcribe_audio(audio_data)
+						if transcription.strip() and len(transcription.strip()) > 5:  # Only process meaningful audio
+							# Quick check if this sounds like a question
+							is_question = any(word in transcription.lower() for word in [
+								'?', 'what', 'how', 'why', 'when', 'where', 'who', 'which', 
+								'can you', 'could you', 'would you', 'do you', 'are you',
+								'tell me', 'explain', 'describe', 'talk about'
+							])
+							
+							if is_question or len(transcription.strip()) > 20:  # Process questions or longer statements
+								ai_response = await generate_ai_response(transcription)
+								
+								# Send AI response to mobile device (ultra-minimal JSON)
+								if mobile_ws:
+									try:
+										# Compressed JSON format for millisecond transfer
+										compact_response = f'{{"t":"r","q":"{transcription[:50]}","a":"{ai_response}"}}'
+										await mobile_ws.send_text(compact_response)
+									except:
+										pass
+						continue
+				except json.JSONDecodeError:
+					# Regular text message, continue with normal flow
+					pass
+				
+				# Store regular message in database
+				message = Message(
+					session_id=session_id,
+					message_type='prompt',
+					content=data,
+					sender=client_type
+				)
+				db.add(message)
+				db.commit()
+				
+				# Broadcast to other client
+				other_client = "mobile" if client_type == "desktop" else "desktop"
+				other_ws = active_connections.get(session_id, {}).get(other_client)
+				if other_ws:
+					try:
+						await other_ws.send_text(data)
+					except:
+						pass
+						
+			except Exception as e:
+				print(f"WebSocket message error: {e}")
+				break
+                    
 	except WebSocketDisconnect:
-		print(f"WebSocket disconnected: {client_type}")
-		# Clean up on disconnect
-		if session_id in active_connections:
-			if active_connections[session_id].get("mobile") == websocket:
-				active_connections[session_id]["mobile"] = None
-				# Notify desktop that mobile disconnected
-				desktop_conn = active_connections[session_id].get("desktop")
-				if desktop_conn:
-					await desktop_conn.send_text("mobile_disconnected")
-			elif active_connections[session_id].get("desktop") == websocket:
-				active_connections[session_id]["desktop"] = None
+		pass
 	finally:
-		# Cleanup if the connection wasn't already handled above
+		# Cleanup connection
 		if session_id in active_connections:
-			if active_connections[session_id].get("mobile") == websocket:
-				active_connections[session_id]["mobile"] = None
-			elif active_connections[session_id].get("desktop") == websocket:
-				active_connections[session_id]["desktop"] = None
+			if active_connections[session_id].get(client_type) == websocket:
+				active_connections[session_id][client_type] = None
+		
+		# Log disconnection
+		disconnect_message = Message(
+			session_id=session_id,
+			message_type='system',
+			content=f'{client_type} disconnected',
+			sender='system'
+		)
+		db.add(disconnect_message)
+		db.commit()
+		
+		# Notify other clients
+		if client_type == "mobile":
+			desktop_ws = active_connections.get(session_id, {}).get("desktop")
+			if desktop_ws:
+				try:
+					await desktop_ws.send_text("mobile_disconnected")
+				except:
+					pass
+		
+		db.close()
 
 @app.get("/mobile", response_class=HTMLResponse)
-async def get_mobile_client(request: Request, session_id: str):
+async def get_mobile_client(request: Request, session_id: str, db: Session = Depends(get_db)):
 	"""Serve the mobile client page."""
 	# Verify the session exists
-	if session_id not in sessions:
+	db_session = db.query(SessionModel).filter(SessionModel.session_id == session_id).first()
+	if not db_session:
 		return HTMLResponse(content="<h1>Session not found!</h1>", status_code=404)
         
 	return templates.TemplateResponse(
@@ -157,7 +280,7 @@ async def get_mobile_client(request: Request, session_id: str):
 		{
 			"request": request,
 			"session_id": session_id,
-			"user_name": sessions[session_id]["user_name"]
+			"user_name": db_session.user_name
 		}
 	)
 
@@ -166,19 +289,169 @@ async def cleanup_sessions():
 	"""Clean up expired sessions to prevent memory leaks."""
 	while True:
 		await asyncio.sleep(3600)  # Run every hour
-		now = datetime.now()
-		expired_sessions = [
-			session_id for session_id, session in sessions.items()
-			if session["expires_at"] < now
-		]
-		for session_id in expired_sessions:
-			if session_id in sessions:
-				del sessions[session_id]
-			if session_id in active_connections:
-				del active_connections[session_id]
+		db = next(get_db())
+		now = datetime.utcnow()
+		expired_sessions = db.query(SessionModel).filter(SessionModel.expires_at < now).all()
+		
+		for session in expired_sessions:
+			# Remove from active connections
+			if session.session_id in active_connections:
+				del active_connections[session.session_id]
+			# Delete from database
+			db.delete(session)
+		
+		db.commit()
+		db.close()
 		
 		if expired_sessions:
 			print(f"Cleaned up {len(expired_sessions)} expired sessions")
+
+# API Routes for admin
+@app.get("/admin", response_class=HTMLResponse)
+async def admin_panel(request: Request, db: Session = Depends(get_db)):
+	"""Admin panel for session management."""
+	sessions = db.query(SessionModel).order_by(desc(SessionModel.created_at)).all()
+	return templates.TemplateResponse(
+		"admin.html",
+		{
+			"request": request,
+			"sessions": sessions
+		}
+	)
+
+@app.get("/admin/session/{session_id}/history")
+async def get_session_history(session_id: str, db: Session = Depends(get_db)):
+	"""Get message history for a session."""
+	messages = db.query(Message).filter(Message.session_id == session_id).order_by(desc(Message.timestamp)).all()
+	return {"messages": [{"content": msg.content, "sender": msg.sender, "timestamp": msg.timestamp.isoformat(), "type": msg.message_type} for msg in messages]}
+
+@app.delete("/admin/session/{session_id}")
+async def delete_session(session_id: str, db: Session = Depends(get_db)):
+	"""Delete a session and all its messages."""
+	# Remove from active connections
+	if session_id in active_connections:
+		del active_connections[session_id]
+	
+	# Delete messages first (foreign key constraint)
+	db.query(Message).filter(Message.session_id == session_id).delete()
+	
+	# Delete session
+	db.query(SessionModel).filter(SessionModel.session_id == session_id).delete()
+	
+	db.commit()
+	return {"message": "Session deleted successfully"}
+
+VOSK_MODEL_PATH = "vosk-model-small-en-us-0.15"  # Adjust if your model folder is different
+if not os.path.exists(VOSK_MODEL_PATH):
+	raise Exception(f"Please download the model from https://alphacephei.com/vosk/models and unpack as '{VOSK_MODEL_PATH}' in the current folder.")
+vosk_model = Model(VOSK_MODEL_PATH)
+
+async def transcribe_audio(audio_data: bytes) -> str:
+	"""Transcribe audio using Vosk (local, open-source) with streaming optimization"""
+	try:
+		# Create recognizer with smaller buffer for faster processing
+		rec = KaldiRecognizer(vosk_model, 16000)
+		rec.SetWords(True)  # Enable word-level timestamps for faster partial results
+		
+		# Convert bytes to numpy array for direct processing
+		audio_np = np.frombuffer(audio_data, dtype=np.float32)
+		
+		# Process audio in smaller chunks for immediate results
+		chunk_size = 1600  # 100ms chunks at 16kHz
+		transcript_parts = []
+		
+		for i in range(0, len(audio_np), chunk_size):
+			chunk = audio_np[i:i + chunk_size]
+			
+			# Convert to int16 PCM format
+			chunk_int16 = (chunk * 32767).astype(np.int16).tobytes()
+			
+			if rec.AcceptWaveform(chunk_int16):
+				result = json.loads(rec.Result())
+				if result.get("text"):
+					transcript_parts.append(result["text"])
+			else:
+				# Get partial results for real-time feedback
+				partial = json.loads(rec.PartialResult())
+				if partial.get("partial"):
+					# Return partial results immediately for millisecond response
+					return partial["partial"]
+		
+		# Get final result
+		final_result = json.loads(rec.FinalResult())
+		if final_result.get("text"):
+			transcript_parts.append(final_result["text"])
+		
+		return " ".join(transcript_parts).strip()
+	except Exception as e:
+		print(f"Transcription error: {e}")
+		return ""
+
+async def generate_ai_response(transcription: str) -> str:
+	"""Generate AI response with millisecond caching + Google Gemini fallback"""
+	try:
+		# Instant cache lookup for millisecond responses
+		transcription_lower = transcription.lower().strip()
+		
+		# Check for exact or partial matches in cache
+		for cached_question, cached_response in RESPONSE_CACHE.items():
+			if cached_question in transcription_lower:
+				print(f"Cache hit for: {transcription_lower}")
+				return cached_response
+		
+		# Fallback to Gemini for uncached questions
+		model = genai.GenerativeModel('gemini-pro')
+		
+		# Ultra-optimized prompt for millisecond responses (5-8 words max)
+		prompt = f"""Q: "{transcription}"
+A: """
+		
+		# Maximum speed settings
+		generation_config = genai.types.GenerationConfig(
+			max_output_tokens=15,   # Ultra-limited for 5-8 word responses
+			temperature=0.1,        # Very low for instant, focused answers
+			top_p=0.8,             # Focused sampling for speed
+			top_k=10               # Reduced choices for faster generation
+		)
+		
+		response = model.generate_content(prompt, generation_config=generation_config)
+		return response.text.strip()
+	except Exception as e:
+		print(f"AI response error: {e}")
+		return "Be specific and confident!"
+
+@app.post("/process_audio")
+async def process_audio(file: UploadFile = File(...)):
+	"""Process uploaded audio and return transcription + AI response"""
+	try:
+		# Read audio data
+		audio_data = await file.read()
+		
+		# Transcribe audio
+		transcription = await transcribe_audio(audio_data)
+		
+		if transcription:
+			# Generate AI response
+			ai_response = await generate_ai_response(transcription)
+			
+			return {
+				"transcription": transcription,
+				"ai_response": ai_response,
+				"status": "success"
+			}
+		else:
+			return {
+				"transcription": "",
+				"ai_response": "I couldn't hear that clearly. Could you repeat?",
+				"status": "no_audio"
+			}
+	except Exception as e:
+		print(f"Audio processing error: {e}")
+		return {
+			"transcription": "",
+			"ai_response": "There was an issue processing the audio.",
+			"status": "error"
+		}
 
 # Start cleanup task when app starts
 @app.on_event("startup")
@@ -188,4 +461,4 @@ async def startup_event():
 
 if __name__ == "__main__":
 	import uvicorn
-	uvicorn.run(app, host="0.0.0.0", port=8000) # host="0.0.0.0" is crucial for Docker & network access
+	uvicorn.run(app, host="0.0.0.0", port=8000)

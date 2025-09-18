@@ -146,6 +146,21 @@
                 } else if (event.data === "mobile_disconnected") {
                     updateStatus('waiting', 'Phone disconnected. Waiting for connection...');
                     document.getElementById('shareScreenBtn').disabled = true;
+                } else {
+                    // Handle JSON messages for screen sharing
+                    try {
+                        const message = JSON.parse(event.data);
+                        if (message.type === 'screen_share_started') {
+                            console.log('Screen sharing started');
+                        } else if (message.type === 'screen_share_stopped') {
+                            console.log('Screen sharing stopped');
+                        } else if (message.type === 'audio_processed') {
+                            console.log('Audio processed:', message.transcription);
+                        }
+                    } catch (e) {
+                        // Handle non-JSON messages (legacy)
+                        console.log("Received message:", event.data);
+                    }
                 }
             };
 
@@ -189,8 +204,267 @@
         }
 
         function startAudioCapture() {
-            // This will be implemented in Phase 2
-            alert('Audio capture starting... (Feature not yet implemented)');
+            console.log("startAudioCapture called - " + new Date().toISOString());
+            startScreenShare();
+        }
+
+        // Screen sharing functionality
+        let screenStream = null;
+
+        async function startScreenShare() {
+            console.log("startScreenShare called - " + new Date().toISOString());
+            try {
+                // Request screen sharing with audio
+                screenStream = await navigator.mediaDevices.getDisplayMedia({
+                    video: {
+                        cursor: "always",
+                        displaySurface: "monitor" // Can be "monitor", "window", or "application"
+                    },
+                    audio: true // Enable audio capture
+                });
+
+                // Show screen share controls
+                showScreenShareControls();
+
+                // Handle when user stops sharing
+                screenStream.getVideoTracks()[0].addEventListener('ended', () => {
+                    stopScreenShare();
+                });
+
+                // Update UI
+                document.getElementById('shareScreenBtn').textContent = '🔴 Stop Sharing';
+                document.getElementById('shareScreenBtn').onclick = stopScreenShare;
+
+                // Notify via WebSocket
+                if (sessionSocket && sessionSocket.readyState === WebSocket.OPEN) {
+                    sessionSocket.send(JSON.stringify({
+                        type: 'screen_share_started',
+                        message: 'Screen sharing started'
+                    }));
+                }
+
+                // Start audio processing if audio track is available
+                startAudioProcessing();
+
+            } catch (error) {
+                console.error('Error starting screen share:', error);
+                if (error.name === 'NotAllowedError') {
+                    showError('Screen sharing permission denied. Please allow screen sharing to continue.');
+                } else if (error.name === 'NotSupportedError') {
+                    showError('Screen sharing is not supported in this browser. Please use Chrome, Firefox, or Edge.');
+                } else {
+                    showError('Failed to start screen sharing: ' + error.message);
+                }
+            }
+        }
+
+        function showScreenShareControls() {
+            // Create or show screen share controls
+            let controlsContainer = document.getElementById('screenShareControls');
+            if (!controlsContainer) {
+                controlsContainer = document.createElement('div');
+                controlsContainer.id = 'screenShareControls';
+                controlsContainer.className = 'screen-share-controls';
+                controlsContainer.innerHTML = `
+                    <div class="share-status">
+                        <div class="recording-indicator">🔴 Screen Sharing Active</div>
+                    </div>
+                    <div class="share-actions">
+                        <button class="btn btn-danger" onclick="stopScreenShare()" id="stopBtn">
+                            ⏹️ Stop Sharing
+                        </button>
+                    </div>
+                `;
+
+                // Insert after the session info card
+                const sessionInfo = document.getElementById('sessionInfo');
+                sessionInfo.parentNode.insertBefore(controlsContainer, sessionInfo.nextSibling);
+            }
+            controlsContainer.style.display = 'block';
+        }
+
+        function stopScreenShare() {
+            try {
+                // Stop audio processing first
+                stopAudioProcessing();
+
+                // Stop all tracks
+                if (screenStream) {
+                    screenStream.getTracks().forEach(track => track.stop());
+                    screenStream = null;
+                }
+
+                // Hide controls
+                const controlsContainer = document.getElementById('screenShareControls');
+                if (controlsContainer) {
+                    controlsContainer.style.display = 'none';
+                }
+
+                // Reset button
+                document.getElementById('shareScreenBtn').textContent = '🎤 Share Screen';
+                document.getElementById('shareScreenBtn').onclick = startAudioCapture;
+
+                // Notify via WebSocket
+                if (sessionSocket && sessionSocket.readyState === WebSocket.OPEN) {
+                    sessionSocket.send(JSON.stringify({
+                        type: 'screen_share_stopped',
+                        message: 'Screen sharing stopped'
+                    }));
+                }
+
+            } catch (error) {
+                console.error('Error stopping screen share:', error);
+            }
+        }
+
+        // Audio processing functionality
+        let audioContext = null;
+        let analyser = null;
+        let microphone = null;
+        let audioProcessor = null;
+
+        function startAudioProcessing() {
+            if (!screenStream) return;
+
+            const audioTracks = screenStream.getAudioTracks();
+            if (audioTracks.length === 0) {
+                console.log('No audio track available in screen share');
+                return;
+            }
+
+            try {
+                // Create audio context
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+
+                // Create audio source from screen share
+                const audioStream = new MediaStream(audioTracks);
+                microphone = audioContext.createMediaStreamSource(audioStream);
+
+                // Create analyser for audio processing
+                analyser = audioContext.createAnalyser();
+                analyser.fftSize = 2048;
+
+                // Connect audio nodes
+                microphone.connect(analyser);
+
+                // Create script processor for audio chunks
+                const bufferSize = 4096;
+                audioProcessor = audioContext.createScriptProcessor(bufferSize, 1, 1);
+
+                let audioBuffer = [];
+                let lastSentTime = Date.now();
+                const SEND_INTERVAL = 250; // Send audio every 250ms for ultra-fast response
+
+                audioProcessor.onaudioprocess = function (event) {
+                    const inputBuffer = event.inputBuffer;
+                    const inputData = inputBuffer.getChannelData(0);
+
+                    // Add to buffer
+                    audioBuffer.push(...inputData);
+
+                    // Send audio chunk every SEND_INTERVAL milliseconds
+                    if (Date.now() - lastSentTime > SEND_INTERVAL && audioBuffer.length > 0) {
+                        sendAudioChunk(audioBuffer);
+                        audioBuffer = [];
+                        lastSentTime = Date.now();
+                    }
+                };
+
+                // Connect processor
+                analyser.connect(audioProcessor);
+                audioProcessor.connect(audioContext.destination);
+
+                console.log('Audio processing started');
+
+            } catch (error) {
+                console.error('Error starting audio processing:', error);
+            }
+        }
+
+        function sendAudioChunk(audioBuffer) {
+            if (!sessionSocket || sessionSocket.readyState !== WebSocket.OPEN) return;
+
+            try {
+                // Convert float32 audio to 16-bit PCM
+                const pcmBuffer = new Int16Array(audioBuffer.length);
+                for (let i = 0; i < audioBuffer.length; i++) {
+                    pcmBuffer[i] = Math.max(-32768, Math.min(32767, audioBuffer[i] * 32767));
+                }
+
+                // Create WAV header
+                const wavBuffer = createWAVBuffer(pcmBuffer, 44100);
+
+                // Convert to base64
+                const base64Audio = btoa(String.fromCharCode(...new Uint8Array(wavBuffer)));
+
+                // Send via WebSocket
+                const audioMessage = {
+                    type: 'audio_chunk',
+                    data: base64Audio
+                };
+
+                sessionSocket.send(JSON.stringify(audioMessage));
+                console.log('Audio chunk sent');
+
+            } catch (error) {
+                console.error('Error sending audio chunk:', error);
+            }
+        }
+
+        function createWAVBuffer(pcmBuffer, sampleRate) {
+            const length = pcmBuffer.length;
+            const buffer = new ArrayBuffer(44 + length * 2);
+            const view = new DataView(buffer);
+
+            // WAV header
+            const writeString = (offset, string) => {
+                for (let i = 0; i < string.length; i++) {
+                    view.setUint8(offset + i, string.charCodeAt(i));
+                }
+            };
+
+            writeString(0, 'RIFF');
+            view.setUint32(4, 36 + length * 2, true);
+            writeString(8, 'WAVE');
+            writeString(12, 'fmt ');
+            view.setUint32(16, 16, true);
+            view.setUint16(20, 1, true);
+            view.setUint16(22, 1, true);
+            view.setUint32(24, sampleRate, true);
+            view.setUint32(28, sampleRate * 2, true);
+            view.setUint16(32, 2, true);
+            view.setUint16(34, 16, true);
+            writeString(36, 'data');
+            view.setUint32(40, length * 2, true);
+
+            // PCM data
+            let offset = 44;
+            for (let i = 0; i < length; i++) {
+                view.setInt16(offset, pcmBuffer[i], true);
+                offset += 2;
+            }
+
+            return buffer;
+        }
+
+        function stopAudioProcessing() {
+            try {
+                if (audioProcessor) {
+                    audioProcessor.disconnect();
+                    audioProcessor = null;
+                }
+                if (microphone) {
+                    microphone.disconnect();
+                    microphone = null;
+                }
+                if (audioContext) {
+                    audioContext.close();
+                    audioContext = null;
+                }
+                console.log('Audio processing stopped');
+            } catch (error) {
+                console.error('Error stopping audio processing:', error);
+            }
         }
 
         // Handle page refresh/closing
@@ -198,8 +472,16 @@
             if (sessionSocket) {
                 sessionSocket.close();
             }
+            if (screenStream) {
+                screenStream.getTracks().forEach(track => track.stop());
+            }
         });
     </script>
+</body>
+
+</html>
+});
+</script>
 </body>
 
 </html>
